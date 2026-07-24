@@ -1,0 +1,28 @@
+spring:
+  application:
+    name: monster-hunter
+  flyway:
+    enabled: true
+    locations: "classpath:db/migration"
+  datasource:
+    # 連線資訊全部可用環境變數覆蓋，沒設定時使用冒號後面的預設值。
+    # 密碼刻意不給預設值：本機沒設 DB_PASSWORD 就直接啟動失敗，
+    # 而不是不小心用一組寫死在檔案裡、還被 commit 上 GitHub 的密碼。
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/monsterhunter_db}
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: validate   # schema 由 Flyway 管理，Hibernate 只驗證，不要改成 update
+    show-sql: true
+
+jwt:
+  # 一樣可用環境變數覆蓋；預設值只給本機開發用，長度符合 HS256 最低 256 bits 要求。
+  # 正式環境務必設定 JWT_SECRET 環境變數換掉，不要用預設值。
+  secret: ${JWT_SECRET:dev-only-default-secret-please-override-me-before-deploy!!}
+  access-token-expiration: 900000       # 15 分鐘（毫秒）
+  refresh-token-expiration: 604800000   # 7 天（毫秒）
+
+server:
+  port: ${SERVER_PORT:8080}
