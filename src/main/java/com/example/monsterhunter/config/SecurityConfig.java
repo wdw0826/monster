@@ -43,6 +43,8 @@ public class SecurityConfig {
             .authorizeHttpRequests(auth -> auth
                 // ── 模板內建的公開路徑（不要刪） ─────────────────────────
                 .requestMatchers("/api/auth/**").permitAll()          // 註冊 / 登入 / refresh / 登出
+                .requestMatchers("/error").permitAll()                // Spring Boot 內部轉發產生錯誤回應用，
+                                                                       // 沒放行的話任何 400/404 錯誤都會被這裡攔成空白 403
 
                 // ══════════════════════════════════════════════════════
                 // 👇👇👇 你的 API 權限規則加在這裡 👇👇👇

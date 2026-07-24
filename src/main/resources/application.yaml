@@ -1,6 +1,8 @@
 spring:
   application:
     name: monster-hunter
+  devtools:
+    add-properties: false   # devtools 本機開發模式預設會強制打開詳細錯誤堆疊，蓋掉下面的 include-stacktrace 設定
   flyway:
     enabled: true
     locations: "classpath:db/migration"
@@ -26,3 +28,8 @@ jwt:
 
 server:
   port: ${SERVER_PORT:8080}
+  error:
+    # 不要把例外類別名稱、堆疊資訊回給呼叫端；devtools 在本機開發模式預設會打開這個，容易忘記關掉。
+    include-stacktrace: never
+    include-message: always
+    include-binding-errors: always   # @Valid 驗證失敗時，要看得到是哪個欄位、為什麼不合法
