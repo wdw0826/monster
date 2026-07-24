@@ -174,8 +174,11 @@ sequenceDiagram
 | 戰鬥（一次呼叫 = 一回合，重複呼叫直到 battleOver=true） | 是 | POST | `/api/battles/action` `{"questId":1,"action":"ATTACK"}` |
 | 商店買藥水 | 是 | POST | `/api/store/potion?type=SMALL` 或 `BIG` |
 | 商店強化武器 | 是 | POST | `/api/store/upgrade-weapon` |
+| 管理端：查看所有玩家的獵人 | 是（需 `ROLE_ADMIN`） | GET | `/api/admin/players` |
 
 `action` 可用值：`ATTACK`（攻擊）、`SMALL_POTION`（喝小藥水）、`BIG_POTION`（喝大藥水）、`LEAVE`（離開戰鬥）。
+
+`/api/admin/**` 這組路徑除了要登入，帳號還要有 `ROLE_ADMIN` 角色，一般使用者（`ROLE_USER`）呼叫會拿到 403，不是 401 也不是 500。
 
 需要登入的端點都要在 header 帶 `Authorization: Bearer <accessToken>`；玩家身分完全從 token 解出來，request 裡不用也不能指定要操作誰的角色。
 
@@ -254,6 +257,23 @@ curl -X POST http://localhost:8080/api/store/upgrade-weapon -H "Authorization: B
 curl http://localhost:8080/api/players/me -H "Authorization: Bearer <TOKEN>"
 ```
 
+## 怎麼弄一個 ADMIN 帳號
+
+註冊 API 一律只給 `ROLE_USER`，`ROLE_ADMIN` 要手動綁定，不會有人能透過 API 自己把自己升級成管理員：
+
+```bash
+# 1. 先照正常流程註冊一個帳號
+curl -X POST http://localhost:8080/api/auth/register -H "Content-Type: application/json" \
+  -d "{\"username\":\"你的帳號\",\"email\":\"你的信箱\",\"password\":\"你的密碼\"}"
+
+# 2. 進資料庫把 ROLE_ADMIN 綁給它（psql 或 DataGrip 都可以）
+INSERT INTO user_roles (user_id, role_id)
+SELECT u.id, r.id FROM users u, roles r
+WHERE u.username = '你的帳號' AND r.name = 'ROLE_ADMIN';
+```
+
+綁完要**重新登入**拿新的 token（角色是寫進 JWT 裡的，舊 token 不會自動更新）。之後帶新 token 打 `/api/admin/players` 就能看到所有玩家的獵人角色列表。
+
 ## 遊戲數值規則
 
 - 獵人：初始 HP 100、攻擊 10、金錢 500、大藥水 3 瓶，配備「初階獵刀」(+5 攻擊)。
@@ -269,3 +289,4 @@ curl http://localhost:8080/api/players/me -H "Authorization: Bearer <TOKEN>"
 - 除了註冊/登入/任務瀏覽，其餘 API 一律要求 JWT 驗證（`SecurityConfig` 預設 `anyRequest().authenticated()`）。
 - 遊戲角色操作（建立獵人、接任務、戰鬥、商店）都是從登入的 JWT 反解出 `userId` 找到對應的獵人，request 裡不接受呼叫端指定要操作哪個玩家 id，避免冒用他人角色。
 - 任務用 `activePlayerId` 鎖定進行中的獵人，避免兩個帳號同時對同一隻魔物發動戰鬥、血量互相干擾。
+- 角色分級：一般帳號是 `ROLE_USER`，只能操作自己的獵人；`/api/admin/**` 底下的管理端點要求 `ROLE_ADMIN`，沒有這個角色一律 403（見上方「怎麼弄一個 ADMIN 帳號」）。

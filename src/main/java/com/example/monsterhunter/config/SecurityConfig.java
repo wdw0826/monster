@@ -49,8 +49,10 @@ public class SecurityConfig {
                 //
                 // 任務板瀏覽公開，不用登入就能看；接任務/戰鬥/商店/建立獵人都要登入，
                 // 沒特別列出的路徑（players、battles、store）落到下面 anyRequest().authenticated()。
+                // 管理端點只有 ROLE_ADMIN 能打，一般使用者（ROLE_USER）會被擋成 403。
                 // ══════════════════════════════════════════════════════
                 .requestMatchers(HttpMethod.GET, "/api/quests/**").permitAll()
+                .requestMatchers("/api/admin/**").hasRole("ADMIN")
 
                 // ── 其他所有請求都需要登入（保持在最後一條） ──────────────
                 .anyRequest().authenticated()
