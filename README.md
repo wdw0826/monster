@@ -88,6 +88,98 @@ erDiagram
 
 `QUESTS.active_player_id` 是雙向鎖：一個任務同時只能有一個 `active_player_id`（一隻魔物不能被兩個人同時打），反過來，同一個 `playerId` 也只能同時是一個任務的 `active_player_id`（一個獵人不能同時進行多個任務）。目前這條規則只在 Service 層檢查（`QuestService.acceptQuest`），資料庫沒有對應的 unique constraint。
 
+## 資料庫設計
+
+上面的資料模型是概念層次的抽象（多對多關聯直接畫一條線，不特別畫出中間表）。這張圖是實際落在 PostgreSQL 裡的實體表結構，跟 `db/migration` 底下的 SQL 一一對應，包含中間表本身，並標出每個欄位的 PK／FK／UK。
+
+```mermaid
+erDiagram
+    users ||--o{ user_roles : has
+    roles ||--o{ user_roles : "assigned via"
+    roles ||--o{ role_permissions : has
+    permissions ||--o{ role_permissions : "granted via"
+    users ||--o{ refresh_tokens : owns
+    users ||--o| players : owns
+    players ||--o| weapons : equips
+    monsters ||--o{ quests : contains
+    players ||--o{ quests : "active_player_id：app 層強制唯一"
+
+    users {
+        bigint id PK
+        varchar(50) username UK
+        varchar(100) email UK
+        varchar(255) password
+        boolean enabled
+        timestamp created_at
+        timestamp updated_at
+    }
+    roles {
+        bigint id PK
+        varchar(50) name UK
+    }
+    permissions {
+        bigint id PK
+        varchar(100) name UK
+    }
+    user_roles {
+        bigint user_id PK, FK
+        bigint role_id PK, FK
+    }
+    role_permissions {
+        bigint role_id PK, FK
+        bigint permission_id PK, FK
+    }
+    refresh_tokens {
+        bigint id PK
+        varchar(512) token UK
+        bigint user_id FK
+        timestamp expiry_date
+    }
+    weapons {
+        bigint id PK
+        varchar(100) name
+        int attack_bonus
+    }
+    monsters {
+        bigint id PK
+        varchar(100) name
+        int hp
+        int max_hp
+        int attack
+        int exp_value
+    }
+    players {
+        bigint id PK
+        bigint user_id FK, UK
+        varchar(50) name
+        int hp
+        int max_hp
+        int attack
+        int level
+        int exp
+        int money
+        int small_potions
+        int big_potions
+        bigint weapon_id FK
+    }
+    quests {
+        bigint id PK
+        varchar(100) name
+        varchar(20) rank
+        varchar(20) status
+        boolean unlocked
+        bigint monster_id FK
+        bigint active_player_id FK
+    }
+```
+
+幾個實際的設計取捨：
+
+- **中間表是物理層才有的東西**：`user_roles`、`role_permissions` 在上面的資料模型圖被簡化成一條多對多的線，實際上是兩張獨立的表，各自用兩個 FK 疊起來當複合主鍵。
+- **`players.user_id` 是 FK 也是 UK**：靠資料庫層級的 unique constraint 保證「一個帳號只能有一隻獵人」，這條規則是 DB 真正擋住的。
+- **`quests.active_player_id` 允許 NULL，也沒有 unique constraint**：嚴格照 schema 來看，它其實是「多個任務可以指到同一個 active_player_id」的多對一關係；「一個玩家同時只能進行一個任務」完全是 `QuestService` 用程式碼擋的，資料庫本身不會阻止你插入違反這條規則的資料——跟 `players.user_id` 那條形成對比：同樣是「唯一性規則」，一個做在 DB 層、一個做在程式碼層。
+- **`users.updated_at` 目前是死欄位**：migration 裡有建這個欄位，但 `User` entity 沒有對應的 Java 欄位，也沒有 `@PreUpdate` 邏輯，所以它只會在建立帳號那一刻寫入一次，之後永遠不會被更新。
+
 ## 專案結構
 
 ```
