@@ -68,6 +68,7 @@ public class BattleService {
         if (action == BattleActionType.LEAVE) {
             messages.add("離開戰鬥，返回主畫面");
             quest.resetStatus();
+            monster.respawn();
             questRepository.save(quest);
             return buildResult(messages, player, monster, true, false, false, true);
         }
