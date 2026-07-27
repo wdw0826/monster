@@ -1,6 +1,6 @@
 # MonsterHunter
 
-一個用 **Spring Boot 4 + Spring Security + JWT + Spring Data JPA** 寫的文字版狩獵 RPG 後端。註冊帳號、登入拿 JWT、建立自己的獵人角色，接任務、跟魔物回合制戰鬥、逛商店買藥水／強化武器。所有遊戲操作都綁在登入帳號自己的獵人身上，不能用別人的角色，也不會有兩個玩家同時打同一隻魔物互相干擾血量的問題。
+一個用 **Spring Boot 4 + Spring Security + JWT + Spring Data JPA** 寫的文字版狩獵 RPG 後端。註冊帳號、登入拿 JWT、建立自己的獵人角色，接任務、跟魔物回合制戰鬥、逛商店買藥水／強化武器。所有遊戲操作都綁在登入帳號自己的獵人身上，不能用別人的角色，也不會有兩個玩家同時打同一隻魔物互相干擾血量的問題；同一個獵人同一時間也只能專心進行一個任務，沒完成或離開前不能再接新的。
 
 技術棧：**Java 24 · Spring Boot 4.0.6 · Spring Security 7 · PostgreSQL · Flyway · jjwt · Lombok**
 
@@ -34,6 +34,21 @@ erDiagram
         String email
         String password
         boolean enabled
+        LocalDateTime createdAt
+    }
+    ROLES {
+        Long id
+        String name
+    }
+    PERMISSIONS {
+        Long id
+        String name
+    }
+    REFRESH_TOKENS {
+        Long id
+        String token
+        Long userId
+        Instant expiryDate
     }
     PLAYER {
         Long id
@@ -45,6 +60,8 @@ erDiagram
         int level
         int exp
         int money
+        int smallPotions
+        int bigPotions
     }
     WEAPONS {
         Long id
@@ -68,6 +85,8 @@ erDiagram
         int expValue
     }
 ```
+
+`QUESTS.active_player_id` 是雙向鎖：一個任務同時只能有一個 `active_player_id`（一隻魔物不能被兩個人同時打），反過來，同一個 `playerId` 也只能同時是一個任務的 `active_player_id`（一個獵人不能同時進行多個任務）。目前這條規則只在 Service 層檢查（`QuestService.acceptQuest`），資料庫沒有對應的 unique constraint。
 
 ## 專案結構
 
@@ -184,7 +203,7 @@ sequenceDiagram
 
 ## 任務戰鬥流程
 
-一個任務同時間只能被一個玩家進行，接任務時會把玩家的 `playerId` 記在任務的 `activePlayerId` 上，戰鬥結束（勝利/失敗/離開）前，其他玩家不能接同一個任務，也不能對它發動戰鬥動作。
+一個任務同時間只能被一個玩家進行，接任務時會把玩家的 `playerId` 記在任務的 `activePlayerId` 上，戰鬥結束（勝利/失敗/離開）前，其他玩家不能接同一個任務，也不能對它發動戰鬥動作。反過來，接任務前也會檢查這個玩家是不是已經有其他 `IN_PROGRESS` 的任務——有的話會被擋下來，必須先完成或離開手上那個任務，才能接下一個，避免一個人同時掛著好幾隻魔物不打、卡住其他玩家。
 
 ```mermaid
 sequenceDiagram
@@ -194,6 +213,7 @@ sequenceDiagram
 
     P->>API: POST /api/quests/{id}/accept
     API->>DB: 任務狀態需為 AVAILABLE
+    API->>DB: 確認這個玩家目前沒有其他 IN_PROGRESS 的任務
     API->>DB: 更新為 IN_PROGRESS，activePlayerId=我的 playerId
     API-->>P: 接受成功
 
