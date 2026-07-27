@@ -40,6 +40,9 @@ public class QuestService {
         if (quest.getStatus() != QuestStatus.AVAILABLE) {
             throw new IllegalStateException("此任務目前已經有其他獵人在進行中，請稍後再試");
         }
+        if (questRepository.existsByActivePlayerId(playerId)) {
+            throw new IllegalStateException("你已經有一個進行中的任務，請先完成或離開該任務再接新的");
+        }
         quest.start(playerId);
         return questRepository.save(quest);
     }
