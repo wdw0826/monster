@@ -235,15 +235,17 @@ export DB_PASSWORD=my_secret_password
 
 看到 `Started MonsterHunterApplication` 就成功了。Flyway 會自動照 `V1`、`V2` 建好所有表，並種好 9 個任務（1★/2★/3★ 各 3 隻魔物）。
 
-其他可覆蓋的環境變數（都有預設值，本機測試可以不設）：
+其他可覆蓋的環境變數：
 
 | 環境變數 | 預設值 | 用途 |
 |---|---|---|
 | `DB_URL` | `jdbc:postgresql://localhost:5432/monsterhunter_db` | 資料庫連線位址 |
 | `DB_USERNAME` | `postgres` | 資料庫帳號 |
 | `DB_PASSWORD` | 無，必填 | 資料庫密碼 |
-| `JWT_SECRET` | 內建開發用預設值 | JWT 簽章密鑰，正式環境務必換掉 |
+| `JWT_SECRET` | 無，必填 | JWT 簽章密鑰，本機開發自己隨便打一組夠長（≥32 bytes）的亂數字串即可 |
 | `SERVER_PORT` | `8080` | 服務監聽 port |
+
+`DB_PASSWORD`、`JWT_SECRET` 這兩個沒有預設值，不設定就直接啟動失敗——是刻意設計成這樣，避免有人不小心把正式環境的密碼／密鑰寫死進這份設定檔（見上面「資料庫設計」段落的類似討論）。
 
 ## 認證流程
 

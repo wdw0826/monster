@@ -20,9 +20,10 @@ spring:
     show-sql: true
 
 jwt:
-  # 一樣可用環境變數覆蓋；預設值只給本機開發用，長度符合 HS256 最低 256 bits 要求。
-  # 正式環境務必設定 JWT_SECRET 環境變數換掉，不要用預設值。
-  secret: ${JWT_SECRET:dev-only-default-secret-please-override-me-before-deploy!!}
+  # 密碼刻意不給預設值：本機沒設 JWT_SECRET 就直接啟動失敗，
+  # 而不是不小心用一組寫死在檔案裡、還被 commit 上 GitHub 的密鑰簽 token。
+  # 長度要符合 HS256 最低 256 bits（32 bytes）要求，本機可以隨便打一串夠長的亂數字串。
+  secret: ${JWT_SECRET}
   access-token-expiration: 900000       # 15 分鐘（毫秒）
   refresh-token-expiration: 604800000   # 7 天（毫秒）
 
