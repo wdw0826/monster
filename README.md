@@ -233,6 +233,21 @@ export DB_PASSWORD=my_secret_password
 
 用 5433 而不是 5432，是為了不跟本機可能已經在跑的 PostgreSQL 搶 port，兩者可以同時並存。
 
+### 選項 C：用 IntelliJ IDEA 執行（不是在終端機跑）
+
+`export` 設的環境變數只有終端機那個 session 看得到，IntelliJ 不會自動繼承，要另外設定：
+
+1. 右上角執行按鈕旁邊的下拉選單 → **Edit Configurations...**
+2. 沒有設定過的話點 **Add new...** → 選 **Spring Boot**，Main class 選 `com.example.monsterhunter.MonsterHunterApplication`
+3. **Store as project file** 保持不勾選——這個專案的 `.gitignore` 沒有排除 `.run/` 資料夾，勾了的話環境變數（包含密碼）會存進一個可能被 git 追蹤的檔案
+4. **Environment variables** 欄位打（分號分隔，格式是 `VAR=value;VAR2=value2`）：
+   ```
+   DB_PASSWORD=你的PostgreSQL密碼;JWT_SECRET=你自己生成的一組亂數字串
+   ```
+5. Apply → OK
+
+**之後執行務必用這個存好的設定**（工具列下拉選單選到 `MonsterHunterApplication` 再點 Run），**不要**點程式碼裡 `main()` 旁邊那個綠色箭頭——那個箭頭每次都是用一個獨立的「臨時設定」跑，不會帶入你剛剛設定的環境變數，會得到一樣的啟動失敗。
+
 看到 `Started MonsterHunterApplication` 就成功了。Flyway 會自動照 `V1`、`V2` 建好所有表，並種好 9 個任務（1★/2★/3★ 各 3 隻魔物）。
 
 其他可覆蓋的環境變數：
