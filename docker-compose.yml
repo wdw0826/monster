@@ -1,0 +1,54 @@
+# 一鍵起 app + postgres + redis。機密（帳密、JWT secret）都從 .env 讀，不寫死在這個檔案裡，
+# 這個檔案本身可以放心進 git；.env 本身不進 git（見 .gitignore），照 .env.example 自己複製一份填真的值。
+#
+# 驗證方式：
+#   docker compose up -d --build   起服務
+#   docker compose down -v         連 volume 一起清掉，模擬全新機器
+#   docker compose up -d --build   照樣要能一鍵起得來，才算真的可重現
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: monsterhunter_db
+      POSTGRES_USER: ${DB_USERNAME}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data   # 持久化，docker compose down（不帶 -v）不會清掉資料
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build: .
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/monsterhunter_db
+      DB_USERNAME: ${DB_USERNAME}
+      DB_PASSWORD: ${DB_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      SERVER_PORT: 8080
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  postgres_data:

@@ -18,6 +18,10 @@ spring:
     hibernate:
       ddl-auto: validate   # schema 由 Flyway 管理，Hibernate 只驗證，不要改成 update
     show-sql: true
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
 
 jwt:
   # 密碼刻意不給預設值：本機沒設 JWT_SECRET 就直接啟動失敗，

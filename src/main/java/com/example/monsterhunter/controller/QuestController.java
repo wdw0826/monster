@@ -38,9 +38,7 @@ public class QuestController {
 
     @GetMapping
     public List<QuestResponse> listQuests() {
-        return questService.getAvailableQuests().stream()
-                .map(QuestResponse::new)
-                .toList();
+        return questService.getAvailableQuests();
     }
 
     @GetMapping("/{id}")

@@ -36,10 +36,12 @@ public class BattleService {
 
     private final PlayerRepository playerRepository;
     private final QuestRepository questRepository;
+    private final QuestService questService;
 
-    public BattleService(PlayerRepository playerRepository, QuestRepository questRepository) {
+    public BattleService(PlayerRepository playerRepository, QuestRepository questRepository, QuestService questService) {
         this.playerRepository = playerRepository;
         this.questRepository = questRepository;
+        this.questService = questService;
     }
 
     @Transactional
@@ -141,10 +143,15 @@ public class BattleService {
         return buildResult(messages, player, monster, battleOver, victory, defeated, false);
     }
 
-    /** 戰鬥結束（離開/勝利/落敗）時共同要做的事：任務放回可接狀態、魔物補血滿，讓下一個人可以再接。 */
+    /**
+     * 戰鬥結束（離開/勝利/落敗）時共同要做的事：任務放回可接狀態、魔物補血滿，讓下一個人可以再接。
+     * 這裡會讓任務板的內容跟著變，記得清掉 QuestService 那邊的 Redis 快取，
+     * 不然玩家會在任務板上一直看到這隻明明已經打完的任務還是「有人在打」。
+     */
     private void releaseQuest(Quest quest, Monster monster) {
         quest.resetStatus();
         monster.respawn();
+        questService.evictQuestBoardCache();
     }
 
     private BattleResultResponse buildResult(List<String> messages, Player player, Monster monster,

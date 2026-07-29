@@ -51,6 +51,16 @@
 			<scope>runtime</scope>
 		</dependency>
 
+		<!-- Redis：快取任務板查詢用 -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-data-redis</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-cache</artifactId>
+		</dependency>
+
 		<!-- Flyway（schema 由 migration 管理，ddl-auto 是 validate） -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>

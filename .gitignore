@@ -28,3 +28,6 @@ target/
 
 ### VS Code ###
 .vscode/
+
+### 機密設定，不進 git（照 .env.example 自己複製一份填真的值） ###
+.env

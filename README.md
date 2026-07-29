@@ -203,7 +203,35 @@ src/main/resources/
 
 ## 如何執行
 
-需要 **Java 24**，以及一個能連到的 **PostgreSQL**——用本機安裝的，或用 Docker 起一個都可以。
+需要 **Java 24**，以及一個能連到的 **PostgreSQL** 跟 **Redis**——想全部用 Docker 一次起來看選項 D，不想動 Docker 的話看選項 A/B/C（但那三個沒有 Redis，`@Cacheable` 那些功能會在啟動時就因為連不到 Redis 而失敗，要嘛額外自己起一個 Redis，要嘛只想跑其他功能可以先把 `CacheConfig`/`@Cacheable` 拿掉）。
+
+### 選項 D：Docker Compose 一鍵起（app + postgres + redis，最推薦）
+
+```bash
+cp .env.example .env
+# 打開 .env，把 DB_PASSWORD、JWT_SECRET 換成自己的值
+
+docker compose up -d --build
+```
+
+看 log 確認三個服務都起來：
+
+```bash
+docker compose logs -f app
+```
+
+看到 `Started MonsterHunterApplication` 就是成功了，服務在 `http://localhost:8080`。
+
+**驗證真的是「一鍵」、不是本機殘留狀態撐起來的**：
+
+```bash
+docker compose down -v   # 連 postgres 的 volume 一起清掉，模擬全新機器
+docker compose up -d --build
+```
+
+一樣要能正常起來（Flyway 會重新建表 + 種子資料）才算數。
+
+不用的時候 `docker compose down`（不加 `-v`）會保留 `postgres_data` volume，資料不會不見；`-v` 才會連資料一起清掉。
 
 ### 選項 A：本機已安裝 PostgreSQL（預設抓 `localhost:5432`）
 
@@ -258,6 +286,8 @@ export DB_PASSWORD=my_secret_password
 | `DB_USERNAME` | `postgres` | 資料庫帳號 |
 | `DB_PASSWORD` | 無，必填 | 資料庫密碼 |
 | `JWT_SECRET` | 無，必填 | JWT 簽章密鑰，本機開發自己隨便打一組夠長（≥32 bytes）的亂數字串即可 |
+| `REDIS_HOST` | `localhost` | Redis 位址，任務板快取用 |
+| `REDIS_PORT` | `6379` | Redis port |
 | `SERVER_PORT` | `8080` | 服務監聽 port |
 
 `DB_PASSWORD`、`JWT_SECRET` 這兩個沒有預設值，不設定就直接啟動失敗——是刻意設計成這樣，避免有人不小心把正式環境的密碼／密鑰寫死進這份設定檔（見上面「資料庫設計」段落的類似討論）。
@@ -309,6 +339,28 @@ sequenceDiagram
 `/api/admin/**` 這組路徑除了要登入，帳號還要有 `ROLE_ADMIN` 角色，一般使用者（`ROLE_USER`）呼叫會拿到 403，不是 401 也不是 500。
 
 需要登入的端點都要在 header 帶 `Authorization: Bearer <accessToken>`；玩家身分完全從 token 解出來，request 裡不用也不能指定要操作誰的角色。
+
+## Redis 快取
+
+`GET /api/quests`（任務板）快取在 Redis，key 是 `questBoard::SimpleKey []`，存的是 `QuestResponse`（DTO）序列化成的 JSON，不是 Quest entity。任何會改到任務狀態的動作（接任務、戰鬥結束的離開/勝利/落敗）都會清掉這個快取，確保任務板不會顯示過期狀態。
+
+怎麼demo「真的有接上」：
+
+```bash
+# 開著 show-sql，連續打兩次
+curl http://localhost:8080/api/quests
+curl http://localhost:8080/api/quests
+```
+
+第一次呼叫後端 log 會看到查 quests/monsters 的 SQL；第二次呼叫應該完全沒有新的 SQL 出現，直接從 Redis 回。也可以直接用 `redis-cli` 看快取內容（key 名稱由 Spring 自動產生，先 `KEYS` 查出實際的名字再 `GET`）：
+
+```bash
+docker compose exec redis redis-cli KEYS '*'
+# 上面指令印出來的 key 原封不動貼到下面
+docker compose exec redis redis-cli GET '<上面查到的 key>'
+```
+
+接一個任務或打完一場戰鬥之後，這個 key 應該會消失（被 `@CacheEvict` 清掉），下一次 `GET /api/quests` 會重新查 DB、重新建快取。
 
 ## 任務戰鬥流程
 

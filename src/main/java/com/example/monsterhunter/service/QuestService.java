@@ -1,9 +1,12 @@
 package com.example.monsterhunter.service;
 
+import com.example.monsterhunter.dto.QuestResponse;
 import com.example.monsterhunter.entity.Quest;
 import com.example.monsterhunter.entity.enums.QuestStatus;
 import com.example.monsterhunter.exception.ResourceNotFoundException;
 import com.example.monsterhunter.repository.QuestRepository;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -12,9 +15,16 @@ import java.util.List;
 /**
  * 任務板查詢與接任務邏輯。一個任務同時間只能被一個玩家進行——接任務時會檢查
  * 狀態是不是 AVAILABLE，不是的話代表已經有人在打，直接丟例外擋下來（見 Quest.activePlayerId）。
+ *
+ * 任務板（getAvailableQuests）查詢頻繁但變動不算頻繁，快取在 Redis 裡的 "questBoard"；
+ * 快取的是 QuestResponse（DTO），不是 Quest entity——entity 帶 Hibernate 的 lazy proxy，
+ * 直接丟進 Redis 序列化容易出問題，也不該讓持久層物件外洩到快取層。
+ * 任何會改到任務狀態的地方（接任務、戰鬥結束）都要記得清快取，不然玩家會看到過期的任務板。
  */
 @Service
 public class QuestService {
+
+    private static final String QUEST_BOARD_CACHE = "questBoard";
 
     private final QuestRepository questRepository;
 
@@ -22,8 +32,11 @@ public class QuestService {
         this.questRepository = questRepository;
     }
 
-    public List<Quest> getAvailableQuests() {
-        return questRepository.findByUnlockedTrue();
+    @Cacheable(QUEST_BOARD_CACHE)
+    public List<QuestResponse> getAvailableQuests() {
+        return questRepository.findByUnlockedTrue().stream()
+                .map(QuestResponse::new)
+                .toList();
     }
 
     public Quest getQuestOrThrow(Long id) {
@@ -32,6 +45,7 @@ public class QuestService {
     }
 
     @Transactional
+    @CacheEvict(QUEST_BOARD_CACHE)
     public Quest acceptQuest(Long id, Long playerId) {
         Quest quest = getQuestOrThrow(id);
         if (!quest.isUnlocked()) {
@@ -45,5 +59,10 @@ public class QuestService {
         }
         quest.start(playerId);
         return questRepository.save(quest);
+    }
+
+    /** 給 BattleService 用：戰鬥結束（離開/勝利/落敗）會讓任務重新變成 AVAILABLE，任務板快取要一起清掉。 */
+    @CacheEvict(QUEST_BOARD_CACHE)
+    public void evictQuestBoardCache() {
     }
 }
