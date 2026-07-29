@@ -68,8 +68,7 @@ public class BattleService {
         // --- 離開戰鬥 ---
         if (action == BattleActionType.LEAVE) {
             messages.add("離開戰鬥，返回主畫面");
-            quest.resetStatus();
-            monster.respawn();
+            releaseQuest(quest, monster);
             questRepository.save(quest);
             return buildResult(messages, player, monster, true, false, false, true);
         }
@@ -121,8 +120,7 @@ public class BattleService {
 
         if (victory) {
             messages.add("★ 狩獵成功！ ★");
-            quest.resetStatus();
-            monster.respawn();
+            releaseQuest(quest, monster);
 
             player.gainExp(VICTORY_EXP);
             player.addMoney(VICTORY_MONEY);
@@ -133,8 +131,7 @@ public class BattleService {
             messages.add("戰後休整：回復了剩餘血量的 50% (" + recoverAmount + " 點)。當前 HP: " + player.getHp());
         } else if (defeated) {
             messages.add("狩獵失敗！即將退回主畫面，並將血量回復至 " + DEFEAT_RECOVER_HP);
-            quest.resetStatus();
-            monster.respawn();
+            releaseQuest(quest, monster);
             player.setHp(DEFEAT_RECOVER_HP);
         }
 
@@ -142,6 +139,12 @@ public class BattleService {
         questRepository.save(quest);
 
         return buildResult(messages, player, monster, battleOver, victory, defeated, false);
+    }
+
+    /** 戰鬥結束（離開/勝利/落敗）時共同要做的事：任務放回可接狀態、魔物補血滿，讓下一個人可以再接。 */
+    private void releaseQuest(Quest quest, Monster monster) {
+        quest.resetStatus();
+        monster.respawn();
     }
 
     private BattleResultResponse buildResult(List<String> messages, Player player, Monster monster,
