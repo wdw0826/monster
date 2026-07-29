@@ -4,6 +4,7 @@ import com.example.monsterhunter.entity.Player;
 import com.example.monsterhunter.entity.Weapon;
 import com.example.monsterhunter.exception.ResourceNotFoundException;
 import com.example.monsterhunter.repository.PlayerRepository;
+import com.example.monsterhunter.repository.QuestRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -17,9 +18,11 @@ import java.util.List;
 public class PlayerService {
 
     private final PlayerRepository playerRepository;
+    private final QuestRepository questRepository;
 
-    public PlayerService(PlayerRepository playerRepository) {
+    public PlayerService(PlayerRepository playerRepository, QuestRepository questRepository) {
         this.playerRepository = playerRepository;
+        this.questRepository = questRepository;
     }
 
     @Transactional
@@ -37,8 +40,26 @@ public class PlayerService {
                 .orElseThrow(() -> new ResourceNotFoundException("這個帳號還沒有獵人角色，請先 POST /api/players/me 建立"));
     }
 
+    @Transactional
+    public Player renamePlayer(Long userId, String newName) {
+        Player player = getMyPlayerOrThrow(userId);
+        player.rename(newName);
+        return player;
+    }
+
     /** 管理端用：列出所有玩家的獵人角色，一般使用者拿不到這個方法，只有 AdminController 會呼叫。 */
     public List<Player> getAllPlayers() {
         return playerRepository.findAllWithWeapon();
+    }
+
+    /** 管理端用：刪除一個玩家的獵人角色。手上還有進行中任務的話先擋下來，不然任務的 active_player_id 會變成孤兒外鍵。 */
+    @Transactional
+    public void deletePlayer(Long id) {
+        Player player = playerRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("找不到 id=" + id + " 的獵人"));
+        if (questRepository.existsByActivePlayerId(id)) {
+            throw new IllegalStateException("這個獵人目前有進行中的任務，請先讓玩家完成或離開任務再刪除");
+        }
+        playerRepository.delete(player);
     }
 }

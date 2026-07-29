@@ -326,6 +326,7 @@ sequenceDiagram
 | 登出 | 否（要帶 refreshToken） | POST | `/api/auth/logout` `{"refreshToken"}` |
 | 建立我的獵人 | 是 | POST | `/api/players/me` `{"name":"獵人名稱"}` |
 | 查我的獵人狀態 | 是 | GET | `/api/players/me` |
+| 改我的獵人名稱 | 是 | PATCH | `/api/players/me` `{"name":"新名稱"}` |
 | 任務板 | 否 | GET | `/api/quests` |
 | 任務詳情 | 否 | GET | `/api/quests/{id}` |
 | 接任務 | 是 | POST | `/api/quests/{id}/accept` |
@@ -333,6 +334,7 @@ sequenceDiagram
 | 商店買藥水 | 是 | POST | `/api/store/potion?type=SMALL` 或 `BIG` |
 | 商店強化武器 | 是 | POST | `/api/store/upgrade-weapon` |
 | 管理端：查看所有玩家的獵人 | 是（需 `ROLE_ADMIN`） | GET | `/api/admin/players` |
+| 管理端：刪除一個玩家的獵人 | 是（需 `ROLE_ADMIN`） | DELETE | `/api/admin/players/{id}`（手上有進行中任務會被擋，回 409） |
 
 `action` 可用值：`ATTACK`（攻擊）、`SMALL_POTION`（喝小藥水）、`BIG_POTION`（喝大藥水）、`LEAVE`（離開戰鬥）。
 

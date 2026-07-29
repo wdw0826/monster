@@ -2,6 +2,7 @@ package com.example.monsterhunter.controller;
 
 import com.example.monsterhunter.dto.CreatePlayerRequest;
 import com.example.monsterhunter.dto.PlayerResponse;
+import com.example.monsterhunter.dto.UpdatePlayerRequest;
 import com.example.monsterhunter.entity.Player;
 import com.example.monsterhunter.security.UserPrincipal;
 import com.example.monsterhunter.service.PlayerService;
@@ -9,6 +10,7 @@ import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -41,5 +43,13 @@ public class PlayerController {
     @GetMapping("/me")
     public PlayerResponse getMyPlayer(@AuthenticationPrincipal UserPrincipal user) {
         return new PlayerResponse(playerService.getMyPlayerOrThrow(user.getId()));
+    }
+
+    /** 改自己獵人的顯示名稱，只改 name 這一個欄位，所以用 PATCH（部分更新）不是 PUT（整包換掉）。 */
+    @PatchMapping("/me")
+    public PlayerResponse updateMyPlayer(@AuthenticationPrincipal UserPrincipal user,
+                                          @Valid @RequestBody UpdatePlayerRequest request) {
+        Player player = playerService.renamePlayer(user.getId(), request.getName());
+        return new PlayerResponse(player);
     }
 }

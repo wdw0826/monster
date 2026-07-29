@@ -81,6 +81,10 @@ public class Player {
         this.weapon = weapon;
     }
 
+    public void rename(String name) {
+        this.name = name;
+    }
+
     /** 每次滿 100 exp 升級一次：攻擊 +5、血量全滿、exp 歸零。 */
     public void gainExp(int amount) {
         exp += amount;

@@ -2,8 +2,12 @@ package com.example.monsterhunter.controller;
 
 import com.example.monsterhunter.dto.PlayerResponse;
 import com.example.monsterhunter.service.PlayerService;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -28,5 +32,12 @@ public class AdminController {
         return playerService.getAllPlayers().stream()
                 .map(PlayerResponse::new)
                 .toList();
+    }
+
+    /** 砍掉一個玩家的獵人角色（含身上裝備的武器，cascade 一起刪）。手上有進行中任務的話會被擋下來，回 409。 */
+    @DeleteMapping("/players/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deletePlayer(@PathVariable Long id) {
+        playerService.deletePlayer(id);
     }
 }
