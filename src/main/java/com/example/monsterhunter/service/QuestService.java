@@ -20,6 +20,11 @@ import java.util.List;
  * 快取的是 QuestResponse（DTO），不是 Quest entity——entity 帶 Hibernate 的 lazy proxy，
  * 直接丟進 Redis 序列化容易出問題，也不該讓持久層物件外洩到快取層。
  * 任何會改到任務狀態的地方（接任務、戰鬥結束）都要記得清快取，不然玩家會看到過期的任務板。
+ *
+ * @CacheEvict 這裡都要記得加 allEntries = true：getAvailableQuests() 沒有參數，key 是固定的
+ * 空 key，如果 evict 那邊沒加 allEntries，預設會拿「被標記方法自己的參數」去算 key
+ * （例如 acceptQuest 的 id、playerId），跟空 key 對不上，等於什麼都沒清到——
+ * 實測時就是這樣：接了任務，畫面卻還看到接之前的舊任務板，查了才發現是這個。
  */
 @Service
 public class QuestService {
@@ -45,7 +50,7 @@ public class QuestService {
     }
 
     @Transactional
-    @CacheEvict(QUEST_BOARD_CACHE)
+    @CacheEvict(value = QUEST_BOARD_CACHE, allEntries = true)
     public Quest acceptQuest(Long id, Long playerId) {
         Quest quest = getQuestOrThrow(id);
         if (!quest.isUnlocked()) {
@@ -62,7 +67,7 @@ public class QuestService {
     }
 
     /** 給 BattleService 用：戰鬥結束（離開/勝利/落敗）會讓任務重新變成 AVAILABLE，任務板快取要一起清掉。 */
-    @CacheEvict(QUEST_BOARD_CACHE)
+    @CacheEvict(value = QUEST_BOARD_CACHE, allEntries = true)
     public void evictQuestBoardCache() {
     }
 }
