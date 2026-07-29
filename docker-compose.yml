@@ -13,7 +13,7 @@ services:
       POSTGRES_USER: ${DB_USERNAME}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
     ports:
-      - "5432:5432"
+      - "5434:5432"   # host 用 5434，避開本機原生 Postgres(5432)、my_postgres(5433)；容器內部還是走 5432，app 內部連線不受影響
     volumes:
       - postgres_data:/var/lib/postgresql/data   # 持久化，docker compose down（不帶 -v）不會清掉資料
     healthcheck:

@@ -1,0 +1,807 @@
+{
+  "info": {
+    "_postman_id": "6f6a1e2a-6f2e-4e2d-9e1a-0729pmonster1",
+    "name": "MonsterHunter API",
+    "description": "魔物獵人 REST API 全套測試集合，資料夾照現有 postman截圖/ 的分類方式（Auth / Player / Quest / Battle / Store / Admin / Security）。\n\n**跑之前**：\n1. 對一個乾淨的資料庫跑（`docker compose down -v && docker compose up -d --build`），因為部分請求假設任務板是初始狀態（quest 3/4/5/6/7/8 都還沒被接）。\n2. 從上到下、整個 collection 一次跑完（Collection Runner 或逐一手動點）——後面的請求依賴前面請求存下來的 accessToken/refreshToken/id 等變數。\n3. Admin 資料夾需要先手動把 ROLE_ADMIN 灌給 0729player 這個帳號（README「怎麼弄一個 ADMIN 帳號」那段的 SQL），API 本身故意不開放自己把自己升級成 admin。\n\n數值都是照遊戲規則算好的固定值（這個系統沒有隨機數），照順序跑就會對得上斷言；如果中途改了順序或重跑局部，數值會對不上，屬於預期行為。",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080" },
+    { "key": "username", "value": "0729player" },
+    { "key": "email", "value": "0729player@test.com" },
+    { "key": "password", "value": "password123" },
+    { "key": "accessToken", "value": "" },
+    { "key": "refreshToken", "value": "" },
+    { "key": "staleRefreshToken", "value": "" },
+    { "key": "playerId", "value": "" },
+    { "key": "otherUsername", "value": "0729player-other" },
+    { "key": "otherEmail", "value": "0729player-other@test.com" },
+    { "key": "otherAccessToken", "value": "" },
+    { "key": "otherRefreshToken", "value": "" },
+    { "key": "otherPlayerId", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "description": "註冊、登入、refresh token 輪換、登出。這個資料夾自己跑到底，最後會是登出狀態，後面的資料夾各自會重新登入拿新 token，不依賴這裡結束時的狀態。",
+      "item": [
+        {
+          "name": "Register_201Created",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('201 建立成功，或 400 表示這個帳號先前已經註冊過（可重複執行）', function () {",
+            "    pm.expect([201, 400]).to.include(pm.response.code);",
+            "});"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"username\": \"{{username}}\",\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}" },
+            "url": { "raw": "{{baseUrl}}/api/auth/register", "host": ["{{baseUrl}}"], "path": ["api", "auth", "register"] }
+          }
+        },
+        {
+          "name": "Login_200OK",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200，回傳 accessToken/refreshToken', function () {",
+            "    pm.response.to.have.status(200);",
+            "    var body = pm.response.json();",
+            "    pm.expect(body.accessToken).to.be.a('string');",
+            "    pm.expect(body.refreshToken).to.be.a('string');",
+            "    pm.collectionVariables.set('accessToken', body.accessToken);",
+            "    pm.collectionVariables.set('refreshToken', body.refreshToken);",
+            "});"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"username\": \"{{username}}\",\n  \"password\": \"{{password}}\"\n}" },
+            "url": { "raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api", "auth", "login"] }
+          }
+        },
+        {
+          "name": "Login_SameAccount_Twice_200OK",
+          "description": "專門抓 RefreshTokenService 忘記加 @Transactional 的地雷：第一次登入過不代表沒事，同帳號馬上再登入一次才是真的測試。",
+          "event": [{ "listen": "prerequest", "script": { "type": "text/javascript", "exec": [
+            "pm.collectionVariables.set('staleRefreshToken', pm.collectionVariables.get('refreshToken'));"
+          ]}}, { "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('同帳號連續登入第二次一樣 200', function () {",
+            "    pm.response.to.have.status(200);",
+            "    var body = pm.response.json();",
+            "    pm.collectionVariables.set('accessToken', body.accessToken);",
+            "    pm.collectionVariables.set('refreshToken', body.refreshToken);",
+            "});"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"username\": \"{{username}}\",\n  \"password\": \"{{password}}\"\n}" },
+            "url": { "raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api", "auth", "login"] }
+          }
+        },
+        {
+          "name": "RefreshToken_401Invalid_OldToken",
+          "description": "第一次登入拿到的 refreshToken，在第二次登入時已經被 deleteByUser 砍掉、換成新的了，拿舊的來 refresh 應該失效。",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('舊的 refreshToken 已失效，401', function () {",
+            "    pm.response.to.have.status(401);",
+            "});"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"refreshToken\": \"{{staleRefreshToken}}\"\n}" },
+            "url": { "raw": "{{baseUrl}}/api/auth/refresh", "host": ["{{baseUrl}}"], "path": ["api", "auth", "refresh"] }
+          }
+        },
+        {
+          "name": "RefreshToken_200OK",
+          "description": "用目前有效的 refreshToken 換一組新的，驗證輪換機制（換到的是新的一組，不是原地回傳同一個）。",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "var oldRefresh = pm.collectionVariables.get('refreshToken');",
+            "pm.test('200，換到新的 accessToken + refreshToken', function () {",
+            "    pm.response.to.have.status(200);",
+            "    var body = pm.response.json();",
+            "    pm.expect(body.refreshToken).to.not.eql(oldRefresh);",
+            "    pm.collectionVariables.set('accessToken', body.accessToken);",
+            "    pm.collectionVariables.set('refreshToken', body.refreshToken);",
+            "});"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}" },
+            "url": { "raw": "{{baseUrl}}/api/auth/refresh", "host": ["{{baseUrl}}"], "path": ["api", "auth", "refresh"] }
+          }
+        },
+        {
+          "name": "Logout_200OK",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200 登出成功', function () {",
+            "    pm.response.to.have.status(200);",
+            "});"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}" },
+            "url": { "raw": "{{baseUrl}}/api/auth/logout", "host": ["{{baseUrl}}"], "path": ["api", "auth", "logout"] }
+          }
+        },
+        {
+          "name": "RefreshToken_401_AfterLogout",
+          "description": "登出會撤銷這個帳號全部的 refreshToken，剛剛登出用的那個現在應該也失效了。",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('登出後這個 refreshToken 也失效，401', function () {",
+            "    pm.response.to.have.status(401);",
+            "});"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}" },
+            "url": { "raw": "{{baseUrl}}/api/auth/refresh", "host": ["{{baseUrl}}"], "path": ["api", "auth", "refresh"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Player",
+      "description": "獵人角色的建立、查詢、改名。開頭重新登入一次，不依賴 Auth 資料夾結束時的（已登出）狀態。",
+      "item": [
+        {
+          "name": "Login_ForPlayerTests_200OK",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200', function () {",
+            "    pm.response.to.have.status(200);",
+            "    var body = pm.response.json();",
+            "    pm.collectionVariables.set('accessToken', body.accessToken);",
+            "    pm.collectionVariables.set('refreshToken', body.refreshToken);",
+            "});"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"username\": \"{{username}}\",\n  \"password\": \"{{password}}\"\n}" },
+            "url": { "raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api", "auth", "login"] }
+          }
+        },
+        {
+          "name": "CreateMyPlayer_201Created",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('201，配一把初階獵刀', function () {",
+            "    pm.response.to.have.status(201);",
+            "    var body = pm.response.json();",
+            "    pm.expect(body.weapon.name).to.eql('初階獵刀');",
+            "    pm.expect(body.hp).to.eql(100);",
+            "    pm.collectionVariables.set('playerId', body.id);",
+            "});"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"0729player\"\n}" },
+            "url": { "raw": "{{baseUrl}}/api/players/me", "host": ["{{baseUrl}}"], "path": ["api", "players", "me"] }
+          }
+        },
+        {
+          "name": "CreateMyPlayer_409_AlreadyExists",
+          "description": "一個帳號只能建立一次獵人，再建一次應該被擋。",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('409 已經有獵人了', function () {",
+            "    pm.response.to.have.status(409);",
+            "});"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"0729player\"\n}" },
+            "url": { "raw": "{{baseUrl}}/api/players/me", "host": ["{{baseUrl}}"], "path": ["api", "players", "me"] }
+          }
+        },
+        {
+          "name": "GetMyPlayer_200OK",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200', function () {",
+            "    pm.response.to.have.status(200);",
+            "    var body = pm.response.json();",
+            "    pm.expect(body.name).to.eql('0729player');",
+            "});"
+          ]}}],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/api/players/me", "host": ["{{baseUrl}}"], "path": ["api", "players", "me"] }
+          }
+        },
+        {
+          "name": "UpdateMyPlayer_200OK",
+          "description": "PATCH：只改 name 這一個欄位，是部分更新，所以用 PATCH 不是 PUT。",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200 改名成功', function () {",
+            "    pm.response.to.have.status(200);",
+            "    var body = pm.response.json();",
+            "    pm.expect(body.name).to.eql('0729player-改名後');",
+            "});"
+          ]}}],
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"0729player-改名後\"\n}" },
+            "url": { "raw": "{{baseUrl}}/api/players/me", "host": ["{{baseUrl}}"], "path": ["api", "players", "me"] }
+          }
+        },
+        {
+          "name": "UpdateMyPlayer_400_BlankName",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('400，欄位驗證失敗，格式統一', function () {",
+            "    pm.response.to.have.status(400);",
+            "    var body = pm.response.json();",
+            "    pm.expect(body.error).to.eql('欄位驗證失敗');",
+            "    pm.expect(body.fields).to.have.property('name');",
+            "});"
+          ]}}],
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"\"\n}" },
+            "url": { "raw": "{{baseUrl}}/api/players/me", "host": ["{{baseUrl}}"], "path": ["api", "players", "me"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Quest",
+      "description": "任務板查詢、接任務。接任務 409 的兩種情境（自己手上已有任務 / 任務被別人接走）都涵蓋，會順便註冊第二個帳號來測後者。",
+      "item": [
+        {
+          "name": "ListQuests_200OK",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200，9 個任務都在', function () {",
+            "    pm.response.to.have.status(200);",
+            "    pm.expect(pm.response.json().length).to.eql(9);",
+            "});"
+          ]}}],
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/quests", "host": ["{{baseUrl}}"], "path": ["api", "quests"] }
+          }
+        },
+        {
+          "name": "ListQuests_200OK_CachedSecondCall",
+          "description": "馬上再打一次，內容應該跟上一次一模一樣——這次是從 Redis 的 questBoard 快取回來，不是重新查 DB（後端 log 開 show-sql 可以看到這次沒有新的 SQL）。",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200，內容跟第一次一致（快取命中）', function () {",
+            "    pm.response.to.have.status(200);",
+            "    pm.expect(pm.response.json().length).to.eql(9);",
+            "});"
+          ]}}],
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/quests", "host": ["{{baseUrl}}"], "path": ["api", "quests"] }
+          }
+        },
+        {
+          "name": "GetQuestById_200OK",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200', function () {",
+            "    pm.response.to.have.status(200);",
+            "    pm.expect(pm.response.json().id).to.eql(2);",
+            "});"
+          ]}}],
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/quests/2", "host": ["{{baseUrl}}"], "path": ["api", "quests", "2"] }
+          }
+        },
+        {
+          "name": "GetQuestById_404NotFound",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('404', function () {",
+            "    pm.response.to.have.status(404);",
+            "});"
+          ]}}],
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/quests/99999", "host": ["{{baseUrl}}"], "path": ["api", "quests", "99999"] }
+          }
+        },
+        {
+          "name": "AcceptQuest_200OK",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200，狀態變 IN_PROGRESS', function () {",
+            "    pm.response.to.have.status(200);",
+            "    var body = pm.response.json();",
+            "    pm.expect(body.status).to.eql('IN_PROGRESS');",
+            "});"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/api/quests/5/accept", "host": ["{{baseUrl}}"], "path": ["api", "quests", "5", "accept"] }
+          }
+        },
+        {
+          "name": "AcceptQuest_409_AlreadyHaveActiveQuest",
+          "description": "自己手上已經有任務 5 在進行中，再接任務 6 應該被擋。",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('409', function () {",
+            "    pm.response.to.have.status(409);",
+            "});"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/api/quests/6/accept", "host": ["{{baseUrl}}"], "path": ["api", "quests", "6", "accept"] }
+          }
+        },
+        {
+          "name": "LeaveQuest5_Setup_200OK",
+          "description": "先離開任務 5，讓自己手上沒有進行中任務，才能正確測出「任務被別人接走」（而不是「自己已經有任務」）的 409。",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200', function () { pm.response.to.have.status(200); });"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "body": { "mode": "raw", "raw": "{\n  \"questId\": 5,\n  \"action\": \"LEAVE\"\n}" },
+            "url": { "raw": "{{baseUrl}}/api/battles/action", "host": ["{{baseUrl}}"], "path": ["api", "battles", "action"] }
+          }
+        },
+        {
+          "name": "Register_OtherUser_ForConflictTest",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('201 或 400（可重複執行）', function () {",
+            "    pm.expect([201, 400]).to.include(pm.response.code);",
+            "});"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"username\": \"{{otherUsername}}\",\n  \"email\": \"{{otherEmail}}\",\n  \"password\": \"{{password}}\"\n}" },
+            "url": { "raw": "{{baseUrl}}/api/auth/register", "host": ["{{baseUrl}}"], "path": ["api", "auth", "register"] }
+          }
+        },
+        {
+          "name": "Login_OtherUser_ForConflictTest",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200', function () {",
+            "    pm.response.to.have.status(200);",
+            "    var body = pm.response.json();",
+            "    pm.collectionVariables.set('otherAccessToken', body.accessToken);",
+            "    pm.collectionVariables.set('otherRefreshToken', body.refreshToken);",
+            "});"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"username\": \"{{otherUsername}}\",\n  \"password\": \"{{password}}\"\n}" },
+            "url": { "raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api", "auth", "login"] }
+          }
+        },
+        {
+          "name": "OtherUser_CreatePlayer_Setup",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('201', function () {",
+            "    pm.response.to.have.status(201);",
+            "    pm.collectionVariables.set('otherPlayerId', pm.response.json().id);",
+            "});"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{otherAccessToken}}" }],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"other-hunter\"\n}" },
+            "url": { "raw": "{{baseUrl}}/api/players/me", "host": ["{{baseUrl}}"], "path": ["api", "players", "me"] }
+          }
+        },
+        {
+          "name": "OtherUser_AcceptQuest8_Setup",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200', function () { pm.response.to.have.status(200); });"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{otherAccessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/api/quests/8/accept", "host": ["{{baseUrl}}"], "path": ["api", "quests", "8", "accept"] }
+          }
+        },
+        {
+          "name": "AcceptQuest_409_TakenByOtherPlayer",
+          "description": "任務 8 現在被另一個帳號接走了，0729player 這時候手上沒有任務（前面已經 LEAVE 過），去接任務 8 應該是「已經有其他獵人在進行中」這種 409，不是「自己已有任務」那種。",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('409', function () {",
+            "    pm.response.to.have.status(409);",
+            "    pm.expect(pm.response.json().error).to.include('其他獵人');",
+            "});"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/api/quests/8/accept", "host": ["{{baseUrl}}"], "path": ["api", "quests", "8", "accept"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Battle",
+      "description": "戰鬥四種指令（ATTACK/SMALL_POTION/BIG_POTION/LEAVE）跟三種結局（勝利/落敗/離開）都覆蓋。這個系統沒有隨機數，數值都是照公式算好的固定值，照順序跑斷言會過。",
+      "item": [
+        {
+          "name": "AcceptQuest3_ForVictoryTest_200OK",
+          "description": "任務3是草食龍（hp30, atk2），玩家 totalAttack=15，剛好兩次攻擊會打贏，拿來測勝利路徑最省事。",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200', function () { pm.response.to.have.status(200); });"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/api/quests/3/accept", "host": ["{{baseUrl}}"], "path": ["api", "quests", "3", "accept"] }
+          }
+        },
+        {
+          "name": "Attack_200OK",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200，第一擊，戰鬥還沒結束', function () {",
+            "    pm.response.to.have.status(200);",
+            "    var body = pm.response.json();",
+            "    pm.expect(body.battleOver).to.eql(false);",
+            "    pm.expect(body.monster.hp).to.eql(15);",
+            "});"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "body": { "mode": "raw", "raw": "{\n  \"questId\": 3,\n  \"action\": \"ATTACK\"\n}" },
+            "url": { "raw": "{{baseUrl}}/api/battles/action", "host": ["{{baseUrl}}"], "path": ["api", "battles", "action"] }
+          }
+        },
+        {
+          "name": "Attack_VictoryPath_200OK",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200，第二擊，狩獵成功，任務板釋放、魔物補血', function () {",
+            "    pm.response.to.have.status(200);",
+            "    var body = pm.response.json();",
+            "    pm.expect(body.victory).to.eql(true);",
+            "    pm.expect(body.battleOver).to.eql(true);",
+            "    pm.expect(body.monster.hp).to.eql(body.monster.maxHp);",
+            "});"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "body": { "mode": "raw", "raw": "{\n  \"questId\": 3,\n  \"action\": \"ATTACK\"\n}" },
+            "url": { "raw": "{{baseUrl}}/api/battles/action", "host": ["{{baseUrl}}"], "path": ["api", "battles", "action"] }
+          }
+        },
+        {
+          "name": "AcceptQuest4_ForPotionTests_200OK",
+          "description": "任務4是雌火龍（hp150），血量夠厚，不會不小心在測藥水的時候就把牠打死。",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200', function () { pm.response.to.have.status(200); });"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/api/quests/4/accept", "host": ["{{baseUrl}}"], "path": ["api", "quests", "4", "accept"] }
+          }
+        },
+        {
+          "name": "BuySmallPotion_Setup_200OK",
+          "description": "新玩家一開始 smallPotions=0，要先買一瓶才測得了 SMALL_POTION 這個戰鬥動作。",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200', function () {",
+            "    pm.response.to.have.status(200);",
+            "    pm.expect(pm.response.json().smallPotions).to.be.above(0);",
+            "});"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/api/store/potion?type=SMALL", "host": ["{{baseUrl}}"], "path": ["api", "store", "potion"], "query": [{ "key": "type", "value": "SMALL" }] }
+          }
+        },
+        {
+          "name": "SmallPotion_200OK",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200，喝水回血+防禦', function () {",
+            "    pm.response.to.have.status(200);",
+            "    var body = pm.response.json();",
+            "    pm.expect(body.player.smallPotions).to.eql(0);",
+            "    pm.expect(body.messages.join(' ')).to.include('喝水中');",
+            "});"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "body": { "mode": "raw", "raw": "{\n  \"questId\": 4,\n  \"action\": \"SMALL_POTION\"\n}" },
+            "url": { "raw": "{{baseUrl}}/api/battles/action", "host": ["{{baseUrl}}"], "path": ["api", "battles", "action"] }
+          }
+        },
+        {
+          "name": "BigPotion_200OK",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200，喝大水回血+防禦', function () {",
+            "    pm.response.to.have.status(200);",
+            "    var body = pm.response.json();",
+            "    pm.expect(body.player.bigPotions).to.eql(2);",
+            "    pm.expect(body.messages.join(' ')).to.include('防禦生效');",
+            "});"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "body": { "mode": "raw", "raw": "{\n  \"questId\": 4,\n  \"action\": \"BIG_POTION\"\n}" },
+            "url": { "raw": "{{baseUrl}}/api/battles/action", "host": ["{{baseUrl}}"], "path": ["api", "battles", "action"] }
+          }
+        },
+        {
+          "name": "Leave_200OK",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200，離開戰鬥，任務板釋放', function () {",
+            "    pm.response.to.have.status(200);",
+            "    var body = pm.response.json();",
+            "    pm.expect(body.left).to.eql(true);",
+            "});"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "body": { "mode": "raw", "raw": "{\n  \"questId\": 4,\n  \"action\": \"LEAVE\"\n}" },
+            "url": { "raw": "{{baseUrl}}/api/battles/action", "host": ["{{baseUrl}}"], "path": ["api", "battles", "action"] }
+          }
+        },
+        {
+          "name": "AcceptQuest7_ForDefeatTest_200OK",
+          "description": "任務7是轟龍，攻擊力50，兩下就能把玩家打到落敗，拿來測落敗路徑最省事。",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200', function () { pm.response.to.have.status(200); });"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/api/quests/7/accept", "host": ["{{baseUrl}}"], "path": ["api", "quests", "7", "accept"] }
+          }
+        },
+        {
+          "name": "Attack_DefeatSetup_200OK",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200，挨第一拳，還沒死', function () {",
+            "    pm.response.to.have.status(200);",
+            "    pm.expect(pm.response.json().battleOver).to.eql(false);",
+            "});"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "body": { "mode": "raw", "raw": "{\n  \"questId\": 7,\n  \"action\": \"ATTACK\"\n}" },
+            "url": { "raw": "{{baseUrl}}/api/battles/action", "host": ["{{baseUrl}}"], "path": ["api", "battles", "action"] }
+          }
+        },
+        {
+          "name": "Attack_DefeatPath_200OK",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200，第二拳落敗，血量回復到 30，任務板釋放', function () {",
+            "    pm.response.to.have.status(200);",
+            "    var body = pm.response.json();",
+            "    pm.expect(body.defeated).to.eql(true);",
+            "    pm.expect(body.battleOver).to.eql(true);",
+            "    pm.expect(body.player.hp).to.eql(30);",
+            "});"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "body": { "mode": "raw", "raw": "{\n  \"questId\": 7,\n  \"action\": \"ATTACK\"\n}" },
+            "url": { "raw": "{{baseUrl}}/api/battles/action", "host": ["{{baseUrl}}"], "path": ["api", "battles", "action"] }
+          }
+        },
+        {
+          "name": "Attack_404NotFound_InvalidQuest",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('404，quest 不存在', function () {",
+            "    pm.response.to.have.status(404);",
+            "});"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "body": { "mode": "raw", "raw": "{\n  \"questId\": 99999,\n  \"action\": \"ATTACK\"\n}" },
+            "url": { "raw": "{{baseUrl}}/api/battles/action", "host": ["{{baseUrl}}"], "path": ["api", "battles", "action"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Store",
+      "description": "商店買藥水、強化武器。other 帳號拿來測強化成功（500 金錢剛好夠一次），0729player 拿來測餘額不足。",
+      "item": [
+        {
+          "name": "OtherUser_UpgradeWeapon_200OK",
+          "description": "other 帳號剛註冊，money 還是初始的 500，剛好夠付一次強化費用，拿來測成功案例最乾淨。",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200，武器變成 初階獵刀(+1)', function () {",
+            "    pm.response.to.have.status(200);",
+            "    var body = pm.response.json();",
+            "    pm.expect(body.weapon.name).to.eql('初階獵刀(+1)');",
+            "    pm.expect(body.money).to.eql(0);",
+            "});"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{otherAccessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/api/store/upgrade-weapon", "host": ["{{baseUrl}}"], "path": ["api", "store", "upgrade-weapon"] }
+          }
+        },
+        {
+          "name": "BuySmallPotion_200OK",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200', function () { pm.response.to.have.status(200); });"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/api/store/potion?type=SMALL", "host": ["{{baseUrl}}"], "path": ["api", "store", "potion"], "query": [{ "key": "type", "value": "SMALL" }] }
+          }
+        },
+        {
+          "name": "BuyBigPotion_200OK",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200', function () { pm.response.to.have.status(200); });"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/api/store/potion?type=BIG", "host": ["{{baseUrl}}"], "path": ["api", "store", "potion"], "query": [{ "key": "type", "value": "BIG" }] }
+          }
+        },
+        {
+          "name": "UpgradeWeapon_409_InsufficientFunds",
+          "description": "0729player 這時候的錢已經被前面戰鬥、藥水花得只剩不到 500，強化應該被擋。",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('409', function () {",
+            "    pm.response.to.have.status(409);",
+            "});"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/api/store/upgrade-weapon", "host": ["{{baseUrl}}"], "path": ["api", "store", "upgrade-weapon"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin",
+      "description": "管理端點，需要 ROLE_ADMIN。跑這個資料夾之前，先照 README「怎麼弄一個 ADMIN 帳號」那段的 SQL，手動把 ROLE_ADMIN 灌給 {{username}}（0729player）這個帳號——這是故意設計成不能透過 API 自己把自己升級成 admin。",
+      "item": [
+        {
+          "name": "Login_AfterAdminGrant_200OK",
+          "description": "角色是登入當下才寫進 JWT 的，灌完 ROLE_ADMIN 要重新登入一次才拿得到新權限的 token。",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200，roles 裡要有 ROLE_ADMIN（沒有的話代表還沒手動灌權限）', function () {",
+            "    pm.response.to.have.status(200);",
+            "    var body = pm.response.json();",
+            "    pm.expect(body.roles).to.include('ROLE_ADMIN');",
+            "    pm.collectionVariables.set('accessToken', body.accessToken);",
+            "});"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"username\": \"{{username}}\",\n  \"password\": \"{{password}}\"\n}" },
+            "url": { "raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api", "auth", "login"] }
+          }
+        },
+        {
+          "name": "ListAllPlayers_200OK_Admin",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200', function () {",
+            "    pm.response.to.have.status(200);",
+            "    pm.expect(pm.response.json()).to.be.an('array');",
+            "});"
+          ]}}],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/api/admin/players", "host": ["{{baseUrl}}"], "path": ["api", "admin", "players"] }
+          }
+        },
+        {
+          "name": "ListAllPlayers_403Forbidden",
+          "description": "用一般玩家（otherAccessToken，只有 ROLE_USER）打管理端點，應該 403，不是 200 也不是 500。",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('403', function () {",
+            "    pm.response.to.have.status(403);",
+            "    pm.expect(pm.response.json().error).to.eql('沒有權限執行此操作');",
+            "});"
+          ]}}],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{otherAccessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/api/admin/players", "host": ["{{baseUrl}}"], "path": ["api", "admin", "players"] }
+          }
+        },
+        {
+          "name": "DeletePlayer_409_HasActiveQuest",
+          "description": "other 帳號手上還有任務 8 在進行中（Quest 資料夾留下來的狀態），這時候刪除應該被擋，不會留下孤兒外鍵。",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('409', function () {",
+            "    pm.response.to.have.status(409);",
+            "});"
+          ]}}],
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/api/admin/players/{{otherPlayerId}}", "host": ["{{baseUrl}}"], "path": ["api", "admin", "players", "{{otherPlayerId}}"] }
+          }
+        },
+        {
+          "name": "DeletePlayer_204NoContent",
+          "description": "刪 0729player 自己的獵人，這時候手上沒有進行中任務，應該直接刪成功。",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('204', function () {",
+            "    pm.response.to.have.status(204);",
+            "});"
+          ]}}],
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/api/admin/players/{{playerId}}", "host": ["{{baseUrl}}"], "path": ["api", "admin", "players", "{{playerId}}"] }
+          }
+        },
+        {
+          "name": "DeletePlayer_404NotFound",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('404', function () {",
+            "    pm.response.to.have.status(404);",
+            "});"
+          ]}}],
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/api/admin/players/999999", "host": ["{{baseUrl}}"], "path": ["api", "admin", "players", "999999"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Security",
+      "description": "跨切面的安全性檢查：401（沒登入）、400（欄位驗證，統一錯誤格式）。403 已經在 Admin 資料夾測過。",
+      "item": [
+        {
+          "name": "Unauthorized_401_NoToken",
+          "description": "完全不帶 Authorization header 打一個需要登入的端點，應該 401，格式跟其他錯誤一致（{\"error\": ...}），不是 Spring Security 預設的空白 403。",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('401', function () {",
+            "    pm.response.to.have.status(401);",
+            "    pm.expect(pm.response.json().error).to.eql('請先登入');",
+            "});"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{baseUrl}}/api/quests/2/accept", "host": ["{{baseUrl}}"], "path": ["api", "quests", "2", "accept"] }
+          }
+        },
+        {
+          "name": "ValidationError_400_BlankFields",
+          "description": "註冊時故意傳空 username、格式不對的 email、太短的密碼，應該回 400 + 逐欄位說明，不是 500 stack trace。",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('400，欄位驗證失敗，逐欄位說明', function () {",
+            "    pm.response.to.have.status(400);",
+            "    var body = pm.response.json();",
+            "    pm.expect(body.error).to.eql('欄位驗證失敗');",
+            "    pm.expect(body.fields).to.have.property('username');",
+            "    pm.expect(body.fields).to.have.property('email');",
+            "    pm.expect(body.fields).to.have.property('password');",
+            "});"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"username\": \"\",\n  \"email\": \"bad-email\",\n  \"password\": \"123\"\n}" },
+            "url": { "raw": "{{baseUrl}}/api/auth/register", "host": ["{{baseUrl}}"], "path": ["api", "auth", "register"] }
+          }
+        }
+      ]
+    }
+  ]
+}
