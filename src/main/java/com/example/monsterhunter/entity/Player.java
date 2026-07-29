@@ -2,6 +2,7 @@ package com.example.monsterhunter.entity;
 
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Entity;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -44,7 +45,9 @@ public class Player {
 
     private int bigPotions = 3;
 
-    @OneToOne(cascade = CascadeType.ALL, orphanRemoval = true)
+    // 同 Quest.monster 的理由：預設 EAGER 會讓 GET /api/admin/players 這種列表 API
+    // 產生 N+1，改 LAZY 後由 PlayerRepository.findAllWithWeapon() 的 JOIN FETCH 一次撈好。
+    @OneToOne(cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     @JoinColumn(name = "weapon_id")
     private Weapon weapon;
 

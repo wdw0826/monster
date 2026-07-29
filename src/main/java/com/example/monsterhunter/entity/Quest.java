@@ -7,6 +7,7 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -36,7 +37,10 @@ public class Quest {
     @Enumerated(EnumType.STRING)
     private QuestStatus status;
 
-    @OneToOne(cascade = CascadeType.ALL, orphanRemoval = true)
+    // fetch 改 LAZY：預設的 EAGER 會讓 GET /api/quests 這種列表 API 產生 N+1
+    // （查完任務列表後，每一筆再各自補一條查 monster 的 SQL），改用 Repository 端的
+    // JOIN FETCH 來一次撈好，見 QuestRepository.findByUnlockedTrue()。
+    @OneToOne(cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     @JoinColumn(name = "monster_id")
     private Monster monster;
 

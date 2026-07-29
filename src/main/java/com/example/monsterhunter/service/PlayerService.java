@@ -39,6 +39,6 @@ public class PlayerService {
 
     /** 管理端用：列出所有玩家的獵人角色，一般使用者拿不到這個方法，只有 AdminController 會呼叫。 */
     public List<Player> getAllPlayers() {
-        return playerRepository.findAll();
+        return playerRepository.findAllWithWeapon();
     }
 }
