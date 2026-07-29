@@ -9,6 +9,7 @@ import com.example.monsterhunter.entity.Monster;
 import com.example.monsterhunter.entity.Player;
 import com.example.monsterhunter.entity.Quest;
 import com.example.monsterhunter.entity.enums.QuestStatus;
+import com.example.monsterhunter.exception.ResourceNotFoundException;
 import com.example.monsterhunter.repository.PlayerRepository;
 import com.example.monsterhunter.repository.QuestRepository;
 import org.springframework.stereotype.Service;
@@ -44,9 +45,9 @@ public class BattleService {
     @Transactional
     public BattleResultResponse performAction(Long playerId, BattleActionRequest request) {
         Player player = playerRepository.findById(playerId)
-                .orElseThrow(() -> new IllegalArgumentException("找不到 id=" + playerId + " 的玩家"));
+                .orElseThrow(() -> new ResourceNotFoundException("找不到 id=" + playerId + " 的玩家"));
         Quest quest = questRepository.findById(request.getQuestId())
-                .orElseThrow(() -> new IllegalArgumentException("找不到 id=" + request.getQuestId() + " 的任務"));
+                .orElseThrow(() -> new ResourceNotFoundException("找不到 id=" + request.getQuestId() + " 的任務"));
 
         if (quest.getStatus() != QuestStatus.IN_PROGRESS) {
             throw new IllegalStateException("請先接下此任務 (POST /api/quests/{id}/accept) 才能開始戰鬥");
