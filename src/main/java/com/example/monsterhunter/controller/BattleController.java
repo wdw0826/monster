@@ -6,6 +6,9 @@ import com.example.monsterhunter.entity.Player;
 import com.example.monsterhunter.security.UserPrincipal;
 import com.example.monsterhunter.service.BattleService;
 import com.example.monsterhunter.service.PlayerService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -18,6 +21,7 @@ import org.springframework.web.bind.annotation.RestController;
  * 重複呼叫直到回應裡的 battleOver=true 為止。這裡只負責「從 JWT 拿到目前登入者、
  * 換成他自己的獵人 id」，實際的傷害計算、勝敗判定都交給 BattleService 處理。
  */
+@Tag(name = "Battle", description = "回合制戰鬥：攻擊 / 喝藥水 / 離開")
 @RestController
 @RequestMapping("/api/battles")
 public class BattleController {
@@ -30,6 +34,13 @@ public class BattleController {
         this.playerService = playerService;
     }
 
+    @Operation(
+            summary = "戰鬥出招",
+            description = "玩家出一次招（ATTACK / SMALL_POTION / BIG_POTION / LEAVE），"
+                    + "重複呼叫直到回應的 battleOver=true 為止。questId 要是自己目前 IN_PROGRESS 的任務，"
+                    + "不然回 409。"
+    )
+    @SecurityRequirement(name = "bearerAuth")
     @PostMapping("/action")
     public BattleResultResponse performAction(@AuthenticationPrincipal UserPrincipal user,
                                                @Valid @RequestBody BattleActionRequest request) {

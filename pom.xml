@@ -37,6 +37,13 @@
 			<artifactId>spring-boot-starter-aspectj</artifactId>
 		</dependency>
 
+		<!-- Swagger / OpenAPI：不在 Spring Boot 的 BOM 管理範圍內，版本要自己指定 -->
+		<dependency>
+			<groupId>org.springdoc</groupId>
+			<artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+			<version>3.0.3</version>
+		</dependency>
+
 		<!-- PostgreSQL -->
 		<dependency>
 			<groupId>org.postgresql</groupId>

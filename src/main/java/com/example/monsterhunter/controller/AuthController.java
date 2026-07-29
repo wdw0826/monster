@@ -5,6 +5,8 @@ import com.example.monsterhunter.entity.*;
 import com.example.monsterhunter.repository.*;
 import com.example.monsterhunter.security.*;
 import com.example.monsterhunter.service.RefreshTokenService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -25,6 +27,7 @@ import java.util.Set;
  *   POST /api/auth/logout    登出（撤銷 refreshToken）
  */
 @Slf4j
+@Tag(name = "Auth", description = "註冊 / 登入 / token 相關")
 @RestController
 @RequestMapping("/api/auth")
 @RequiredArgsConstructor
@@ -37,6 +40,11 @@ public class AuthController {
     private final PasswordEncoder passwordEncoder;
     private final RefreshTokenService refreshTokenService;
 
+    @Operation(
+            summary = "登入",
+            description = "用帳號密碼換取 accessToken（15分鐘，打其他 API 用）跟 refreshToken（7天，過期後拿來換新的 accessToken）。"
+                    + "帳密錯回 401，帳號被停用回 403。"
+    )
     @PostMapping("/login")
     public ResponseEntity<AuthResponse> login(@Valid @RequestBody LoginRequest request) {
         try {
