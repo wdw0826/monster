@@ -83,6 +83,29 @@ class ApiFlowTest extends TestDatabaseSupport {
     }
 
     @Test
+    void 帳號相關API的回應都是JSON格式() throws Exception {
+        String name = uniqueName();
+        String password = "password-" + UUID.randomUUID();
+
+        Res registered = post("/api/auth/register", Map.of("username", name, "email", name + "@example.test", "password", password), null);
+        assertThat(registered.status).isEqualTo(201);
+        assertThat(registered.json.path("message").asText()).as("註冊成功回 {\"message\": ...}").isEqualTo("註冊成功");
+
+        Res duplicate = post("/api/auth/register", Map.of("username", name, "email", "x" + name + "@example.test", "password", password), null);
+        assertThat(duplicate.status).isEqualTo(400);
+        assertThat(duplicate.json.path("error").asText()).as("重複帳號回 {\"error\": ...}").isEqualTo("此使用者名已被使用");
+
+        Res wrongPassword = post("/api/auth/login", Map.of("username", name, "password", "wrong-password"), null);
+        assertThat(wrongPassword.status).isEqualTo(401);
+        assertThat(wrongPassword.json.path("error").asText()).as("登入失敗要有錯誤訊息，不能是空的").isNotBlank();
+
+        JsonNode login = post("/api/auth/login", Map.of("username", name, "password", password), null).json;
+        Res logout = post("/api/auth/logout", Map.of("refreshToken", login.path("refreshToken").asText()), null);
+        assertThat(logout.status).isEqualTo(200);
+        assertThat(logout.json.path("message").asText()).as("登出回 {\"message\": ...}").isEqualTo("登出成功");
+    }
+
+    @Test
     void token換新與登出() throws Exception {
         Account a = newAccount();
 

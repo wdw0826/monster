@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.context.ActiveProfiles;
 
 import java.net.URI;
@@ -15,6 +16,7 @@ import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * 武器的生命週期跟管理端 API。
@@ -90,6 +92,21 @@ class WeaponAndAdminTest extends TestDatabaseSupport {
         jdbc.update("DELETE FROM users WHERE id = ?", deletedByDb.userId);
 
         assertThat(orphanWeapons()).isZero();
+    }
+
+    @Test
+    void 兩隻角色不能共用同一把武器() throws Exception {
+        Hunter a = newHunter();
+        Hunter b = newHunter();
+        try {
+            // 如果允許共用，刪掉 a 時 trigger 會把武器刪掉，b 就會指向一把不存在的武器
+            assertThatThrownBy(() -> jdbc.update("UPDATE players SET weapon_id = ? WHERE id = ?", a.weaponId, b.playerId))
+                    .as("資料庫要擋下「兩隻角色指向同一把武器」")
+                    .isInstanceOf(DataIntegrityViolationException.class);
+        } finally {
+            // 沒被擋下的話（修正前）把 b 改回原本的武器，不影響後面的測試
+            jdbc.update("UPDATE players SET weapon_id = ? WHERE id = ?", b.weaponId, b.playerId);
+        }
     }
 
     // ------------------------------------------------------------------ 管理端 API（需要 ROLE_ADMIN）
