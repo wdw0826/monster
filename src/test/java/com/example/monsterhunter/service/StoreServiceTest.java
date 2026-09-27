@@ -4,9 +4,12 @@ import com.example.monsterhunter.dto.PotionType;
 import com.example.monsterhunter.entity.Player;
 import com.example.monsterhunter.entity.Weapon;
 import com.example.monsterhunter.repository.PlayerRepository;
+import com.example.monsterhunter.repository.WeaponRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -18,6 +21,7 @@ class StoreServiceTest {
 
     private StoreService storeService;
     private Player player;
+    private final List<Object> deletedWeapons = new ArrayList<>();
 
     @BeforeEach
     void setUp() {
@@ -25,7 +29,9 @@ class StoreServiceTest {
         player.equipWeapon(new Weapon("初階獵刀", 5));
         PlayerRepository playerRepository = Fakes.of(PlayerRepository.class, "findByUserId",
                 args -> USER_ID.equals(args[0]) ? Optional.of(player) : Optional.empty());
-        storeService = new StoreService(playerRepository);
+        WeaponRepository weaponRepository = Fakes.of(WeaponRepository.class, "delete",
+                args -> deletedWeapons.add(args[0]));
+        storeService = new StoreService(playerRepository, weaponRepository);
     }
 
     @Test
@@ -53,6 +59,14 @@ class StoreServiceTest {
         assertThat(player.getWeapon().getName()).isEqualTo("初階獵刀(+1)");
         assertThat(player.getWeapon().getAttackBonus()).isEqualTo(20);
         assertThat(player.getMoney()).isEqualTo(0);
+    }
+
+    @Test
+    void 強化後舊武器會被刪掉() {
+        Weapon original = player.getWeapon();
+        storeService.upgradeWeapon(USER_ID);
+
+        assertThat(deletedWeapons).containsExactly(original);
     }
 
     @Test

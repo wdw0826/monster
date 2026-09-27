@@ -178,6 +178,7 @@ erDiagram
 - **中間表是物理層才有的東西**：`user_roles`、`role_permissions` 在上面的資料模型圖被簡化成一條多對多的線，實際上是兩張獨立的表，各自用兩個 FK 疊起來當複合主鍵。
 - **`players.user_id` 是 FK 也是 UK**：靠資料庫層級的 unique constraint 保證「一個帳號只能有一隻獵人」，這條規則是 DB 真正擋住的。
 - **`quests.active_player_id` 允許 NULL，但非 NULL 的值必須唯一**：V3 加了 `CREATE UNIQUE INDEX ... WHERE active_player_id IS NOT NULL`（partial unique index），沒人在打的任務可以有很多筆 NULL，但同一個獵人不能同時是兩個任務的 active player。原本這條規則只在 `QuestService` 用程式碼擋，實測兩個請求同時送出時兩邊的檢查都會通過，所以改由資料庫保證。
+- **刪角色時，武器由資料庫 trigger 一起刪**：外鍵方向是 `players.weapon_id → weapons`，資料庫本來不會在刪角色時連帶刪武器；刪帳號讓資料庫 CASCADE 連帶刪掉角色時，武器就會變成孤兒（開發資料庫實際累積過 14 把）。V4 加了 `trg_players_delete_weapon`，不管角色從哪條路被刪都會把武器一起刪；Java 的 `Player.weapon` 因此只 cascade 新增／合併，不 cascade 刪除，避免兩邊重複刪。強化武器換下來的舊武器由 `StoreService` 明確刪除。
 - **`users.updated_at` 目前是死欄位**：migration 裡有建這個欄位，但 `User` entity 沒有對應的 Java 欄位，也沒有 `@PreUpdate` 邏輯，所以它只會在建立帳號那一刻寫入一次，之後永遠不會被更新。
 
 ## 專案結構
@@ -199,7 +200,8 @@ src/main/resources/
 └── db/migration/
     ├── V1__auth_schema.sql        帳號 / 角色 / 權限 / refresh token
     ├── V2__create_game_schema.sql 玩家 / 武器 / 魔物 / 任務 + 任務板種子資料
-    └── V3__concurrency_guards.sql 樂觀鎖 version 欄位 + 一人一任務的 unique index
+    ├── V3__concurrency_guards.sql 樂觀鎖 version 欄位 + 一人一任務的 unique index
+    └── V4__delete_weapon_with_player.sql 刪角色時連帶刪武器的 trigger + 清掉既有孤兒武器
 ```
 
 ## 如何執行
@@ -420,8 +422,9 @@ sequenceDiagram
 | `service/BattleServiceTest`、`service/StoreServiceTest` | 什麼都不用 | 戰鬥傷害、減傷、勝敗結算、商店扣款與強化（單元測試） |
 | `integration/ApiFlowTest` | 本機 PostgreSQL | 真的把 app 起起來打 HTTP：帳號、建角、商店、戰鬥、權限、錯誤輸入、token、兩種併發情境 |
 | `integration/QuestBoardCacheTest` | 本機 PostgreSQL | 任務板快取不會在 commit 前被清掉而卡住舊狀態 |
+| `integration/WeaponAndAdminTest` | 本機 PostgreSQL | 不管怎麼刪角色、強化武器都不會留下孤兒武器；管理端 API（列出角色、釋放任務、刪角色） |
 
-整合測試連的是**獨立的測試資料庫** `monsterhunter_test`（設定在 `src/test/resources/application-test.yaml`），不會動到開發用的 `monsterhunter_db`；每個測試開始前會把任務板重設成初始狀態。第一次跑之前先建好測試帳號跟資料庫（只需要一次）：
+整合測試連的是**獨立的測試資料庫** `monsterhunter_test`（設定在 `src/test/resources/application-test.yaml`），不會動到開發用的 `monsterhunter_db`；每個測試開始前會把任務板重設成初始狀態，並刪掉之前測試建立的 `@example.test` 帳號。第一次跑之前先建好測試帳號跟資料庫（只需要一次）：
 
 ```sql
 CREATE ROLE monsterhunter_test LOGIN PASSWORD 'mh_test_local_only';

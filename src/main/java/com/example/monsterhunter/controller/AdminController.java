@@ -39,7 +39,7 @@ public class AdminController {
                 .toList();
     }
 
-    /** 砍掉一個玩家的獵人角色（含身上裝備的武器，cascade 一起刪）。手上有進行中任務的話會被擋下來，回 409。 */
+    /** 砍掉一個玩家的獵人角色（身上裝備的武器由資料庫 trigger 一起刪，見 V4 migration）。手上有進行中任務的話會被擋下來，回 409。帳號本身保留。 */
     @DeleteMapping("/players/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void deletePlayer(@PathVariable Long id) {

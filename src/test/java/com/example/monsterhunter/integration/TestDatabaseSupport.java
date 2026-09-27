@@ -13,7 +13,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * 整合測試共用：每個測試開始前把任務板重設成初始狀態（全部可接、魔物滿血）、清掉任務板快取，
- * 讓每個測試彼此獨立，不會因為上一個測試留下「進行中」的任務而互相影響。
+ * 並刪掉之前測試建立的帳號（email 都是 @example.test），讓每個測試彼此獨立，
+ * 測試資料庫也不會每跑一次就多十幾個帳號（刪帳號會連帶刪掉角色、refresh token，武器由 V4 的 trigger 刪）。
  *
  * 動資料之前會先確認連到的是 monsterhunter_test，避免設定寫錯時誤改到開發用的資料庫。
  */
@@ -37,6 +38,7 @@ abstract class TestDatabaseSupport {
         }
         jdbc.update("UPDATE quests SET status = 'AVAILABLE', active_player_id = NULL");
         jdbc.update("UPDATE monsters SET hp = max_hp");
+        jdbc.update("DELETE FROM users WHERE email LIKE '%@example.test'");
         Cache board = cacheManager.getCache("questBoard");
         if (board != null) {
             board.clear();

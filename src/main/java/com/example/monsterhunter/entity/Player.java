@@ -48,7 +48,12 @@ public class Player {
 
     // 同 Quest.monster 的理由：預設 EAGER 會讓 GET /api/admin/players 這種列表 API
     // 產生 N+1，改 LAZY 後由 PlayerRepository.findAllWithWeapon() 的 JOIN FETCH 一次撈好。
-    @OneToOne(cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+    //
+    // 只 cascade 新增／合併，不 cascade 刪除、也不開 orphanRemoval：
+    // 角色被刪時由資料庫 trigger 把武器一起刪（V4 migration），不管是 admin API 刪角色、
+    // 還是刪帳號讓資料庫 CASCADE 連帶刪角色都一樣，不會留下孤兒武器。
+    // 強化武器換下來的舊武器由 StoreService.upgradeWeapon 明確刪除。
+    @OneToOne(cascade = {CascadeType.PERSIST, CascadeType.MERGE}, fetch = FetchType.LAZY)
     @JoinColumn(name = "weapon_id")
     private Weapon weapon;
 

@@ -5,6 +5,7 @@ import com.example.monsterhunter.entity.Player;
 import com.example.monsterhunter.entity.Weapon;
 import com.example.monsterhunter.exception.ResourceNotFoundException;
 import com.example.monsterhunter.repository.PlayerRepository;
+import com.example.monsterhunter.repository.WeaponRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -26,9 +27,11 @@ public class StoreService {
     private static final int UPGRADE_ATTACK_BONUS = 15;
 
     private final PlayerRepository playerRepository;
+    private final WeaponRepository weaponRepository;
 
-    public StoreService(PlayerRepository playerRepository) {
+    public StoreService(PlayerRepository playerRepository, WeaponRepository weaponRepository) {
         this.playerRepository = playerRepository;
+        this.weaponRepository = weaponRepository;
     }
 
     @Transactional
@@ -84,6 +87,11 @@ public class StoreService {
         }
 
         player.equipWeapon(new Weapon(newName, newAttack));
+        if (current != null) {
+            // 舊武器沒人用了，直接刪掉（Player.weapon 沒開 orphanRemoval，見 Player 的說明）。
+            // Hibernate 會照「新增新武器 → 角色改指向新武器 → 刪舊武器」的順序寫入，不會撞到外鍵。
+            weaponRepository.delete(current);
+        }
         return player;
     }
 
