@@ -17,6 +17,7 @@ public class RegisterRequest {
 
     @Email
     @NotBlank
+    @Size(max = 100, message = "Email 最多 100 個字")   // 對應 users.email VARCHAR(100)
     private String email;
 
     @NotBlank

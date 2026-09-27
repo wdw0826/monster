@@ -346,7 +346,7 @@ sequenceDiagram
 
 ## Redis 快取
 
-`GET /api/quests`（任務板）快取在 Redis，key 是 `questBoard::SimpleKey []`，存的是 `QuestResponse`（DTO）序列化成的 JSON，不是 Quest entity。任何會改到任務狀態的動作（接任務、戰鬥結束的離開/勝利/落敗）都會清掉這個快取，確保任務板不會顯示過期狀態。
+`GET /api/quests`（任務板）快取在 Redis，key 是 `questBoard::SimpleKey []`，存的是 `QuestResponse`（DTO）序列化成的 JSON，不是 Quest entity。任何會改到任務狀態的動作（接任務、戰鬥結束的離開/勝利/落敗、管理員釋放任務）都會清掉這個快取，而且是**等交易 commit 之後才清**（`QuestService.evictQuestBoardCache`）：如果在 commit 前就清，中間剛好有人查任務板，會把還沒 commit 的舊狀態重新寫回快取，任務板就會卡在過期的「進行中」——`QuestBoardCacheTest` 專門測這個情境。
 
 怎麼demo「真的有接上」：
 
@@ -364,7 +364,7 @@ docker compose exec redis redis-cli KEYS '*'
 docker compose exec redis redis-cli GET '<上面查到的 key>'
 ```
 
-接一個任務或打完一場戰鬥之後，這個 key 應該會消失（被 `@CacheEvict` 清掉），下一次 `GET /api/quests` 會重新查 DB、重新建快取。
+接一個任務或打完一場戰鬥之後，這個 key 應該會消失（交易 commit 後被清掉），下一次 `GET /api/quests` 會重新查 DB、重新建快取。
 
 ## 併發防護
 
@@ -406,6 +406,29 @@ sequenceDiagram
     API->>DB: 任務重新開放（activePlayerId 清空）、結算經驗/金錢
     API-->>P: battleOver=true, victory/defeated
 ```
+
+## 自動化測試
+
+```bash
+./mvnw test
+```
+
+或在 IntelliJ 對 `src/test/java` 按右鍵 → Run 'All Tests'。
+
+| 測試 | 需要什麼 | 測什麼 |
+|---|---|---|
+| `service/BattleServiceTest`、`service/StoreServiceTest` | 什麼都不用 | 戰鬥傷害、減傷、勝敗結算、商店扣款與強化（單元測試） |
+| `integration/ApiFlowTest` | 本機 PostgreSQL | 真的把 app 起起來打 HTTP：帳號、建角、商店、戰鬥、權限、錯誤輸入、token、兩種併發情境 |
+| `integration/QuestBoardCacheTest` | 本機 PostgreSQL | 任務板快取不會在 commit 前被清掉而卡住舊狀態 |
+
+整合測試連的是**獨立的測試資料庫** `monsterhunter_test`（設定在 `src/test/resources/application-test.yaml`），不會動到開發用的 `monsterhunter_db`；每個測試開始前會把任務板重設成初始狀態。第一次跑之前先建好測試帳號跟資料庫（只需要一次）：
+
+```sql
+CREATE ROLE monsterhunter_test LOGIN PASSWORD 'mh_test_local_only';
+CREATE DATABASE monsterhunter_test OWNER monsterhunter_test;
+```
+
+這組帳密只能登入本機的測試庫；要換的話設環境變數 `TEST_DB_PASSWORD`（連線位址、帳號分別是 `TEST_DB_URL`、`TEST_DB_USERNAME`）。測試不需要 Redis，快取用記憶體版本。
 
 ## 如何遊玩（API 呼叫範例）
 

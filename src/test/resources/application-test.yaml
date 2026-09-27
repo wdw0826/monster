@@ -1,0 +1,24 @@
+# 整合測試專用設定（@ActiveProfiles("test") 才會載入）。
+#
+# 連的是「測試專用」的資料庫 monsterhunter_test，跟平常開發用的 monsterhunter_db 分開：
+# 測試會自己重設任務狀態、建一堆測試帳號，不能碰到正式資料。
+# 第一次在新電腦跑之前，先用 psql / pgAdmin 建好測試帳號跟資料庫（只需要一次）：
+#
+#   CREATE ROLE monsterhunter_test LOGIN PASSWORD 'mh_test_local_only';
+#   CREATE DATABASE monsterhunter_test OWNER monsterhunter_test;
+#
+# 這組帳密只能登入 monsterhunter_test 這個本機測試庫，不是任何正式環境的密碼；
+# 想換成別的密碼就設環境變數 TEST_DB_PASSWORD。表結構跟種子資料由 Flyway 自動建立。
+spring:
+  datasource:
+    url: ${TEST_DB_URL:jdbc:postgresql://localhost:5432/monsterhunter_test}
+    username: ${TEST_DB_USERNAME:monsterhunter_test}
+    password: ${TEST_DB_PASSWORD:mh_test_local_only}
+  jpa:
+    show-sql: false
+  # 測試不依賴 Redis：用記憶體快取，快取的行為（命中、清除時機）照樣測得到
+  cache:
+    type: simple
+
+jwt:
+  secret: test-only-jwt-secret-for-integration-tests-0123456789

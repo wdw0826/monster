@@ -13,6 +13,7 @@ import com.example.monsterhunter.repository.PlayerRepository;
 import com.example.monsterhunter.repository.QuestRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.cache.concurrent.ConcurrentMapCacheManager;
 
 import java.util.Optional;
 
@@ -42,8 +43,8 @@ class BattleServiceTest {
                 args -> PLAYER_ID.equals(args[0]) ? Optional.of(player) : Optional.empty());
         QuestRepository questRepository = Fakes.of(QuestRepository.class, "findById",
                 args -> QUEST_ID.equals(args[0]) ? Optional.ofNullable(quest) : Optional.empty());
-        // evictQuestBoardCache() 本身是空方法（只靠 @CacheEvict），單元測試裡直接用真的 QuestService 就好
-        QuestService questService = new QuestService(questRepository);
+        // 單元測試不在交易裡，evictQuestBoardCache() 會直接清記憶體快取，不影響戰鬥邏輯
+        QuestService questService = new QuestService(questRepository, new ConcurrentMapCacheManager());
 
         battleService = new BattleService(playerRepository, questRepository, questService);
     }

@@ -1,6 +1,7 @@
 package com.example.monsterhunter.dto;
 
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 
 /**
  * POST /api/players/me 的請求格式：建立自己的獵人角色。
@@ -9,6 +10,7 @@ import jakarta.validation.constraints.NotBlank;
 public class CreatePlayerRequest {
 
     @NotBlank
+    @Size(max = 50, message = "名稱最多 50 個字")
     private String name;
 
     public CreatePlayerRequest() {
