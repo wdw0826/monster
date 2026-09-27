@@ -86,7 +86,7 @@ erDiagram
     }
 ```
 
-`QUESTS.active_player_id` 是雙向鎖：一個任務同時只能有一個 `active_player_id`（一隻魔物不能被兩個人同時打），反過來，同一個 `playerId` 也只能同時是一個任務的 `active_player_id`（一個獵人不能同時進行多個任務）。目前這條規則只在 Service 層檢查（`QuestService.acceptQuest`），資料庫沒有對應的 unique constraint。
+`QUESTS.active_player_id` 是雙向鎖：一個任務同時只能有一個 `active_player_id`（一隻魔物不能被兩個人同時打），反過來，同一個 `playerId` 也只能同時是一個任務的 `active_player_id`（一個獵人不能同時進行多個任務）。這條規則除了 Service 層檢查（`QuestService.acceptQuest`），V3 migration 也在資料庫加了 partial unique index（`uk_quests_active_player`），兩個請求同時進來時由資料庫擋住；`quests` / `players` 另外有 `version` 欄位做樂觀鎖（見「併發防護」）。
 
 ## 資料庫設計
 
@@ -177,7 +177,7 @@ erDiagram
 
 - **中間表是物理層才有的東西**：`user_roles`、`role_permissions` 在上面的資料模型圖被簡化成一條多對多的線，實際上是兩張獨立的表，各自用兩個 FK 疊起來當複合主鍵。
 - **`players.user_id` 是 FK 也是 UK**：靠資料庫層級的 unique constraint 保證「一個帳號只能有一隻獵人」，這條規則是 DB 真正擋住的。
-- **`quests.active_player_id` 允許 NULL，也沒有 unique constraint**：嚴格照 schema 來看，它其實是「多個任務可以指到同一個 active_player_id」的多對一關係；「一個玩家同時只能進行一個任務」完全是 `QuestService` 用程式碼擋的，資料庫本身不會阻止你插入違反這條規則的資料——跟 `players.user_id` 那條形成對比：同樣是「唯一性規則」，一個做在 DB 層、一個做在程式碼層。
+- **`quests.active_player_id` 允許 NULL，但非 NULL 的值必須唯一**：V3 加了 `CREATE UNIQUE INDEX ... WHERE active_player_id IS NOT NULL`（partial unique index），沒人在打的任務可以有很多筆 NULL，但同一個獵人不能同時是兩個任務的 active player。原本這條規則只在 `QuestService` 用程式碼擋，實測兩個請求同時送出時兩邊的檢查都會通過，所以改由資料庫保證。
 - **`users.updated_at` 目前是死欄位**：migration 裡有建這個欄位，但 `User` entity 沒有對應的 Java 欄位，也沒有 `@PreUpdate` 邏輯，所以它只會在建立帳號那一刻寫入一次，之後永遠不會被更新。
 
 ## 專案結構
@@ -198,12 +198,13 @@ src/main/resources/
 ├── application.yaml
 └── db/migration/
     ├── V1__auth_schema.sql        帳號 / 角色 / 權限 / refresh token
-    └── V2__create_game_schema.sql 玩家 / 武器 / 魔物 / 任務 + 任務板種子資料
+    ├── V2__create_game_schema.sql 玩家 / 武器 / 魔物 / 任務 + 任務板種子資料
+    └── V3__concurrency_guards.sql 樂觀鎖 version 欄位 + 一人一任務的 unique index
 ```
 
 ## 如何執行
 
-需要 **Java 24**，以及一個能連到的 **PostgreSQL** 跟 **Redis**——想全部用 Docker 一次起來看選項 D，不想動 Docker 的話看選項 A/B/C（但那三個沒有 Redis，`@Cacheable` 那些功能會在啟動時就因為連不到 Redis 而失敗，要嘛額外自己起一個 Redis，要嘛只想跑其他功能可以先把 `CacheConfig`/`@Cacheable` 拿掉）。
+需要 **Java 24**，以及一個能連到的 **PostgreSQL**；**Redis** 是選配——想全部用 Docker 一次起來看選項 D，不想動 Docker 的話看選項 A/B/C。沒有 Redis 也能正常啟動、所有 API 照常運作：`CacheConfig` 的 `CacheErrorHandler` 會在連不到 Redis 時記一筆 warn，直接改查資料庫，只是任務板少了快取。
 
 ### 選項 D：Docker Compose 一鍵起（app + postgres + redis，最推薦）
 
@@ -335,6 +336,7 @@ sequenceDiagram
 | 商店強化武器 | 是 | POST | `/api/store/upgrade-weapon` |
 | 管理端：查看所有玩家的獵人 | 是（需 `ROLE_ADMIN`） | GET | `/api/admin/players` |
 | 管理端：刪除一個玩家的獵人 | 是（需 `ROLE_ADMIN`） | DELETE | `/api/admin/players/{id}`（手上有進行中任務會被擋，回 409） |
+| 管理端：強制釋放卡住的任務 | 是（需 `ROLE_ADMIN`） | POST | `/api/admin/quests/{id}/release` |
 
 `action` 可用值：`ATTACK`（攻擊）、`SMALL_POTION`（喝小藥水）、`BIG_POTION`（喝大藥水）、`LEAVE`（離開戰鬥）。
 
@@ -363,6 +365,20 @@ docker compose exec redis redis-cli GET '<上面查到的 key>'
 ```
 
 接一個任務或打完一場戰鬥之後，這個 key 應該會消失（被 `@CacheEvict` 清掉），下一次 `GET /api/quests` 會重新查 DB、重新建快取。
+
+## 併發防護
+
+兩個請求同時修改同一筆資料時（兩個玩家同時接同一個任務、同一個玩家連點購買），原本兩邊都會回 200，但其中一個的修改會被蓋掉。現在的防護：
+
+| 情境 | 防護 | 結果 |
+|---|---|---|
+| 兩個玩家同時接同一個任務 | `Quest` 的 `@Version`（樂觀鎖） | 一個 200，另一個 409 |
+| 同一個獵人同時接兩個任務 | partial unique index `uk_quests_active_player` | 違反的那個 409 |
+| 同一個玩家連點買東西 | `Player` 的 `@Version` | 衝突的那幾次 409，回 200 的次數跟實際扣款次數一致 |
+
+409 的回應是 `{"error": "這筆資料剛剛被其他請求修改了，請重新整理後再試一次"}`，前端收到後重新查一次狀態再讓玩家重試即可。
+
+管理員可以用 `POST /api/admin/quests/{id}/release` 強制釋放卡住的任務（玩家接了任務後沒打完就離開，任務會一直是 IN_PROGRESS）。
 
 ## 任務戰鬥流程
 

@@ -2,9 +2,7 @@ package com.example.monsterhunter.controller;
 
 import com.example.monsterhunter.dto.PlayerResponse;
 import com.example.monsterhunter.dto.PotionType;
-import com.example.monsterhunter.entity.Player;
 import com.example.monsterhunter.security.UserPrincipal;
-import com.example.monsterhunter.service.PlayerService;
 import com.example.monsterhunter.service.StoreService;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -21,22 +19,18 @@ import org.springframework.web.bind.annotation.RestController;
 public class StoreController {
 
     private final StoreService storeService;
-    private final PlayerService playerService;
 
-    public StoreController(StoreService storeService, PlayerService playerService) {
+    public StoreController(StoreService storeService) {
         this.storeService = storeService;
-        this.playerService = playerService;
     }
 
     @PostMapping("/potion")
     public PlayerResponse buyPotion(@AuthenticationPrincipal UserPrincipal user, @RequestParam PotionType type) {
-        Player player = playerService.getMyPlayerOrThrow(user.getId());
-        return new PlayerResponse(storeService.buyPotion(player, type));
+        return new PlayerResponse(storeService.buyPotion(user.getId(), type));
     }
 
     @PostMapping("/upgrade-weapon")
     public PlayerResponse upgradeWeapon(@AuthenticationPrincipal UserPrincipal user) {
-        Player player = playerService.getMyPlayerOrThrow(user.getId());
-        return new PlayerResponse(storeService.upgradeWeapon(player));
+        return new PlayerResponse(storeService.upgradeWeapon(user.getId()));
     }
 }

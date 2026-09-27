@@ -66,6 +66,20 @@ public class QuestService {
         return questRepository.save(quest);
     }
 
+    /**
+     * 管理端用：強制把卡住的任務放回可接狀態（魔物補滿血）。
+     * 玩家接了任務後不再呼叫戰鬥 API（關掉視窗、token 過期、忘記密碼…），任務就會一直是 IN_PROGRESS，
+     * 其他人永遠接不到——實際測試時就遇過。這支給管理員手動解開，不用進資料庫改。
+     */
+    @Transactional
+    @CacheEvict(value = QUEST_BOARD_CACHE, allEntries = true)
+    public Quest forceRelease(Long id) {
+        Quest quest = getQuestOrThrow(id);
+        quest.resetStatus();
+        quest.getMonster().respawn();
+        return quest;
+    }
+
     /** 給 BattleService 用：戰鬥結束（離開/勝利/落敗）會讓任務重新變成 AVAILABLE，任務板快取要一起清掉。 */
     @CacheEvict(value = QUEST_BOARD_CACHE, allEntries = true)
     public void evictQuestBoardCache() {

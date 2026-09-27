@@ -14,6 +14,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.OneToOne;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 
 /**
  * 任務，掛一隻魔物（見 Monster）。任務板一開始就種好 9 個（1★/2★/3★ 各 3 個），
@@ -48,6 +49,11 @@ public class Quest {
 
     @Column(name = "active_player_id")
     private Long activePlayerId;
+
+    // 樂觀鎖：兩個玩家同時接同一個任務時，兩邊都會讀到 AVAILABLE，
+    // 有了 version，後寫回的那個會因為版本對不上而失敗（→ 409），不會兩個人都接成功。
+    @Version
+    private Long version;
 
     protected Quest() {
     }

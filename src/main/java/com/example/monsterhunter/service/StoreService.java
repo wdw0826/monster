@@ -3,12 +3,19 @@ package com.example.monsterhunter.service;
 import com.example.monsterhunter.dto.PotionType;
 import com.example.monsterhunter.entity.Player;
 import com.example.monsterhunter.entity.Weapon;
+import com.example.monsterhunter.exception.ResourceNotFoundException;
+import com.example.monsterhunter.repository.PlayerRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
  * 商店的業務邏輯：藥水購買、武器強化。兩個操作都是先檢查錢夠不夠、扣錢，
  * 再修改玩家身上的狀態；強化武器不是改原本那把的數值，而是整把換新的（見 upgradeWeapon）。
+ *
+ * 參數收的是 userId，Player 在交易「裡面」才查出來：以前是 Controller 在交易外先查好 Player 再傳進來，
+ * 能存檔全靠 open-in-view 讓那個 Player 剛好還被同一個 EntityManager 管著，哪天關掉 open-in-view
+ * 就會變成「不報錯、但也不存檔」。現在不依賴這個行為。
+ * 同一個玩家同時送出多次購買時，Player 上的 @Version 會讓衝突的那次失敗（GlobalExceptionHandler 轉成 409）。
  */
 @Service
 public class StoreService {
@@ -18,8 +25,15 @@ public class StoreService {
     private static final int UPGRADE_PRICE = 500;
     private static final int UPGRADE_ATTACK_BONUS = 15;
 
+    private final PlayerRepository playerRepository;
+
+    public StoreService(PlayerRepository playerRepository) {
+        this.playerRepository = playerRepository;
+    }
+
     @Transactional
-    public Player buyPotion(Player player, PotionType type) {
+    public Player buyPotion(Long userId, PotionType type) {
+        Player player = loadPlayer(userId);
         int price = (type == PotionType.SMALL) ? SMALL_POTION_PRICE : BIG_POTION_PRICE;
         if (player.getMoney() < price) {
             throw new IllegalStateException("金錢不足，無法購買藥水");
@@ -35,7 +49,8 @@ public class StoreService {
 
     /** 強化目前裝備的武器：整把換新的，攻擊力疊加，名稱疊加 (+1)/(+2)/... */
     @Transactional
-    public Player upgradeWeapon(Player player) {
+    public Player upgradeWeapon(Long userId) {
+        Player player = loadPlayer(userId);
         if (player.getMoney() < UPGRADE_PRICE) {
             throw new IllegalStateException("金錢不足，無法強化武器");
         }
@@ -70,5 +85,10 @@ public class StoreService {
 
         player.equipWeapon(new Weapon(newName, newAttack));
         return player;
+    }
+
+    private Player loadPlayer(Long userId) {
+        return playerRepository.findByUserId(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("這個帳號還沒有獵人角色，請先 POST /api/players/me 建立"));
     }
 }

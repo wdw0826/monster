@@ -9,6 +9,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.OneToOne;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 
 /**
  * 玩家的獵人角色，是整個遊戲玩法的主體。一個登入帳號（User）只能有一隻獵人
@@ -50,6 +51,11 @@ public class Player {
     @OneToOne(cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     @JoinColumn(name = "weapon_id")
     private Weapon weapon;
+
+    // 樂觀鎖：同一個玩家連點「買藥水／強化武器」時，多個請求會讀到同一份金錢，
+    // 沒有 version 的話後寫的會蓋掉先寫的（回 200 但實際沒買到）。有了 version，衝突的那次會回 409。
+    @Version
+    private Long version;
 
     protected Player() {
     }

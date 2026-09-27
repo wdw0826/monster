@@ -18,6 +18,10 @@ spring:
     hibernate:
       ddl-auto: validate   # schema 由 Flyway 管理，Hibernate 只驗證，不要改成 update
     show-sql: true
+    # 明確寫出來，關掉啟動時「open-in-view is enabled by default」那條警告。
+    # Controller 在交易外組 PlayerResponse / QuestResponse 時會碰到 LAZY 的 weapon、monster，
+    # 目前靠 open-in-view 讓它們還讀得到。要改成 false 的話，得先把這些組 DTO 的地方都搬進 @Transactional 的 Service 裡。
+    open-in-view: true
   data:
     redis:
       host: ${REDIS_HOST:localhost}

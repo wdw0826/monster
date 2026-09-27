@@ -3,8 +3,12 @@ package com.example.monsterhunter.config;
 import com.example.monsterhunter.dto.QuestResponse;
 import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.cache.autoconfigure.RedisCacheManagerBuilderCustomizer;
+import org.springframework.cache.Cache;
+import org.springframework.cache.annotation.CachingConfigurer;
 import org.springframework.cache.annotation.EnableCaching;
+import org.springframework.cache.interceptor.CacheErrorHandler;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.cache.RedisCacheConfiguration;
@@ -33,10 +37,41 @@ import java.util.List;
  * 還早，注入會直接噴「required a bean of type ObjectMapper that could not be found」，
  * 整個 context 啟動失敗。快取序列化用的 ObjectMapper 本來就跟對外 HTTP 回應那份互相獨立
  * 也比較乾淨，不用特別去搶那個共用 bean。
+ *
+ * Redis 連不上時不要讓整支 API 跟著掛：預設的 CacheErrorHandler 會把 Redis 的例外直接往外丟，
+ * 結果是 Redis 一掛，GET /api/quests 就回 500（實測過：本機沒起 Redis 時就是這樣）。
+ * 快取只是加速用的，不是資料來源，所以這裡改成「記一筆 warn、當作沒命中快取」，
+ * 直接去查 PostgreSQL，功能照常，只是少了快取。
  */
+@Slf4j
 @Configuration
 @EnableCaching
-public class CacheConfig {
+public class CacheConfig implements CachingConfigurer {
+
+    @Override
+    public CacheErrorHandler errorHandler() {
+        return new CacheErrorHandler() {
+            @Override
+            public void handleCacheGetError(RuntimeException ex, Cache cache, Object key) {
+                log.warn("快取讀取失敗，改查資料庫 [cache={}]：{}", cache.getName(), ex.getMessage());
+            }
+
+            @Override
+            public void handleCachePutError(RuntimeException ex, Cache cache, Object key, Object value) {
+                log.warn("快取寫入失敗，略過 [cache={}]：{}", cache.getName(), ex.getMessage());
+            }
+
+            @Override
+            public void handleCacheEvictError(RuntimeException ex, Cache cache, Object key) {
+                log.warn("快取清除失敗，略過 [cache={}]：{}", cache.getName(), ex.getMessage());
+            }
+
+            @Override
+            public void handleCacheClearError(RuntimeException ex, Cache cache) {
+                log.warn("快取清空失敗，略過 [cache={}]：{}", cache.getName(), ex.getMessage());
+            }
+        };
+    }
 
     private static final String QUEST_BOARD_CACHE = "questBoard";
 

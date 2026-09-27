@@ -1,11 +1,14 @@
 package com.example.monsterhunter.controller;
 
 import com.example.monsterhunter.dto.PlayerResponse;
+import com.example.monsterhunter.dto.QuestResponse;
 import com.example.monsterhunter.service.PlayerService;
+import com.example.monsterhunter.service.QuestService;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
@@ -21,9 +24,11 @@ import java.util.List;
 public class AdminController {
 
     private final PlayerService playerService;
+    private final QuestService questService;
 
-    public AdminController(PlayerService playerService) {
+    public AdminController(PlayerService playerService, QuestService questService) {
         this.playerService = playerService;
+        this.questService = questService;
     }
 
     /** 列出所有玩家的獵人角色，一般使用者的 GET /api/players/me 只看得到自己的。 */
@@ -39,5 +44,11 @@ public class AdminController {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void deletePlayer(@PathVariable Long id) {
         playerService.deletePlayer(id);
+    }
+
+    /** 強制釋放卡住的任務：狀態改回 AVAILABLE、清掉 activePlayerId、魔物補滿血。 */
+    @PostMapping("/quests/{id}/release")
+    public QuestResponse releaseQuest(@PathVariable Long id) {
+        return new QuestResponse(questService.forceRelease(id));
     }
 }
